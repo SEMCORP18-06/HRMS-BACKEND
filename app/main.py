@@ -4497,6 +4497,7 @@ def submit_onboarding_info():
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def catch_all(path):
+    print(f"[DEBUG] catch_all path received: '{path}'")
     # Serve backend static uploads (certificates, documents, etc.)
     if path.startswith("static/"):
         if (os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV")) and path.startswith("static/uploads/"):
@@ -4506,6 +4507,7 @@ def catch_all(path):
         requested_file = os.path.join(app.root_path, path)
         if os.path.isfile(requested_file):
             return send_from_directory(app.root_path, path)
+        return jsonify({"detail": "Requested static document file not found."}), 404
             
     # Let API routes 404 cleanly
     if path.startswith("api/"):
