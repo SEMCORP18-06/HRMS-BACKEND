@@ -2714,6 +2714,7 @@ def get_holidays():
 @login_required
 def create_holiday():
     try:
+        tenant_id = g.current_user["tenant_id"]
         data = request.json or {}
         name = data.get("name")
         date = data.get("date")
@@ -2726,6 +2727,47 @@ def create_holiday():
             "date": date,
             "type": h_type
         })
+        
+        # Dispatch notification emails to all registered active employees
+        employees = list(db.employees.find({"tenant_id": tenant_id, "status": "ACTIVE"}))
+        recipient_emails = []
+        for emp in employees:
+            email = emp.get("email")
+            if email:
+                recipient_emails.append(email)
+                
+        if recipient_emails:
+            try:
+                parsed_date = datetime.datetime.strptime(date, "%Y-%m-%d")
+                formatted_date = parsed_date.strftime("%A, %B %d, %Y")
+            except Exception:
+                formatted_date = date
+                
+            subject = f"Notice: Upcoming Holiday on {date} - {name} 📅🎉"
+            body = f"""
+            <html>
+                <body style="font-family: Arial, sans-serif; background-color: #faf5ff; padding: 20px; color: #1e293b;">
+                    <div style="background-color: white; padding: 40px; border-radius: 16px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-top: 8px solid #14b8a6; text-align: center;">
+                        <span style="font-size: 50px;">📅🎉</span>
+                        <h2 style="color: #0d9488; margin-top: 15px; font-size: 22px;">Holiday Announcement</h2>
+                        <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin-top: 20px;">
+                            Dear Team,<br><br>
+                            Please be informed that the company will observe a holiday on <b>{formatted_date}</b> on account of <b>{name}</b> ({h_type} Holiday).
+                        </p>
+                        <div style="background-color: #f0fdfa; border: 1px solid #99f6e4; padding: 20px; margin: 20px 0; border-radius: 10px; text-align: center; color: #0f766e; font-weight: bold; font-size: 16px;">
+                            ✨ Enjoy the upcoming holiday! ✨
+                        </div>
+                        <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left;">
+                            We hope you have a relaxing day off. Please make sure to wrap up your critical tasks before the holiday.
+                        </p>
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0;">
+                        <p style="font-size: 12px; color: #94a3b8;">People Operations & HR Team</p>
+                    </div>
+                </body>
+            </html>
+            """
+            send_email(", ".join(recipient_emails), subject, body)
+            
         return jsonify({"message": "Holiday added successfully."}), 201
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
