@@ -658,19 +658,25 @@ def seed_next_months_pulses():
         print(f"[SCHEDULER] Monthly pulse seeder error: {str(e)}")
 
 def init_scheduler():
-    if not scheduler.running:
-        scheduler.start()
-        
-        # Seed holidays if database is empty
-        seed_holidays()
-        
-        # Pre-populate daily pulses for current and next month on startup
+    import os
+    is_vercel = os.getenv("VERCEL") == "1" or "VERCEL" in os.environ
+    
+    # Always seed database defaults on startup
+    seed_holidays()
+    try:
         today = datetime.now()
         ensure_daily_pulse_schedule(today.year, today.month)
-        
-        # Next month calculation
         next_month_date = today + timedelta(days=32)
         ensure_daily_pulse_schedule(next_month_date.year, next_month_date.month)
+    except Exception as e:
+        print(f"[SCHEDULER] Error seeding database defaults on startup: {str(e)}")
+
+    if is_vercel:
+        print("[SCHEDULER] Running in serverless/Vercel environment. Skipping background thread scheduler initialization.")
+        return
+
+    if not scheduler.running:
+        scheduler.start()
         
         scheduler.add_job(
             check_and_send_daily_pulse,
@@ -688,8 +694,6 @@ def init_scheduler():
             id="daily_holiday_notifications"
         )
         # Rolling monthly seeder: runs on the 1st of every month at 9:05 AM
-        # Seeds pulse quotes for current month + next month, keeping the window
-        # always 2 months ahead without needing a server restart.
         scheduler.add_job(
             seed_next_months_pulses,
             CronTrigger(day=1, hour=9, minute=5),
