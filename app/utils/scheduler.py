@@ -14,26 +14,31 @@ def ensure_daily_pulse_schedule(year, month):
     try:
         tenant_id = "semco"
         
-        # Get all Mondays in this month
-        import calendar
-        num_days = calendar.monthrange(year, month)[1]
-        mondays = []
-        for d in range(1, num_days + 1):
-            date_obj = datetime(year, month, d)
-            if date_obj.weekday() == 0:  # 0 is Monday
-                mondays.append(date_obj.date().isoformat())
-                
-        if not mondays:
-            return
-            
         # Check if schedule already exists for this year and month
         existing_count = db.daily_pulse_schedule.count_documents({
             "tenant_id": tenant_id,
             "date": {"$regex": f"^{year}-{month:02d}-"}
         })
-        if existing_count >= len(mondays):
+        if existing_count >= 3:
             return
             
+        # Get all business days in this month
+        import calendar
+        import random
+        num_days = calendar.monthrange(year, month)[1]
+        business_days = []
+        for d in range(1, num_days + 1):
+            date_obj = datetime(year, month, d)
+            if date_obj.weekday() < 5:  # Monday to Friday
+                business_days.append(date_obj.date().isoformat())
+                
+        if len(business_days) < 3:
+            return
+            
+        # Select exactly 3 random business days
+        selected_dates = random.sample(business_days, 3)
+        selected_dates.sort()  # Sort chronologically for nice rendering
+        
         quotes = list(db.quotes.find({}))
         if not quotes:
             # Seed 100 default quotes if library is empty
@@ -151,24 +156,24 @@ def ensure_daily_pulse_schedule(year, month):
         unused_quotes = [q for q in quotes if q.get("text") not in used_quote_texts]
         
         # Fallback to all quotes if we ran out of unused ones
-        if len(unused_quotes) < len(mondays):
+        if len(unused_quotes) < 3:
             unused_quotes = quotes
             
-        selected_quotes = random.sample(unused_quotes, len(mondays)) if len(unused_quotes) >= len(mondays) else (unused_quotes * len(mondays))[:len(mondays)]
+        selected_quotes = random.sample(unused_quotes, 3) if len(unused_quotes) >= 3 else (unused_quotes * 3)[:3]
         
-        for i, target_date in enumerate(mondays):
+        for i, target_date in enumerate(selected_dates):
             existing = db.daily_pulse_schedule.find_one({"tenant_id": tenant_id, "date": target_date})
             if not existing:
                 db.daily_pulse_schedule.insert_one({
                     "tenant_id": tenant_id,
                     "date": target_date,
-                    "time": "09:00",
+                    "time": "10:30",
                     "quote": selected_quotes[i].get("text"),
                     "author": selected_quotes[i].get("author", "Unknown"),
                     "status": "Scheduled",
                     "delivered_at": None
                 })
-        print(f"[SCHEDULER] Generated weekly (Monday) Daily Pulses for {year}-{month:02d}.")
+        print(f"[SCHEDULER] Generated 3 random business-day Daily Pulses for {year}-{month:02d}.")
     except Exception as e:
         print(f"[SCHEDULER] Error generating Daily Pulse schedule: {str(e)}")
 
@@ -786,7 +791,7 @@ def init_scheduler():
         
         scheduler.add_job(
             check_and_send_daily_pulse,
-            CronTrigger(hour=9, minute=0),
+            CronTrigger(hour=10, minute=30),
             id="daily_pulse_quote_blast"
         )
         scheduler.add_job(
