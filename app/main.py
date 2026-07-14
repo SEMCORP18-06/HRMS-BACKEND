@@ -31,6 +31,14 @@ else:
 app = Flask(__name__, static_folder=None)
 CORS(app)
 
+def get_upload_dir(*paths):
+    if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+        upload_dir = os.path.join("/tmp", "static", "uploads", *paths)
+    else:
+        upload_dir = os.path.join(app.root_path, "static", "uploads", *paths)
+    os.makedirs(upload_dir, exist_ok=True)
+    return upload_dir
+
 @app.before_request
 def handle_options_preflight():
     if request.method == "OPTIONS":
@@ -1785,8 +1793,7 @@ def handle_appreciation():
                 import os
                 filename = secure_filename(file.filename)
                 
-                upload_dir = os.path.join(app.root_path, 'static', 'uploads', 'certificates')
-                os.makedirs(upload_dir, exist_ok=True)
+                upload_dir = get_upload_dir('certificates')
                 
                 import uuid
                 unique_filename = f"{uuid.uuid4().hex}_{filename}"
@@ -2041,7 +2048,13 @@ def update_club_members(club_id):
 
 # --- E-Library ---
 import uuid as uuid_lib
-ELIBRARY_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'elibrary')
+class ElibraryDir:
+    def __str__(self):
+        return get_upload_dir('elibrary')
+    def __fspath__(self):
+        return get_upload_dir('elibrary')
+
+ELIBRARY_UPLOAD_DIR = ElibraryDir()
 
 @app.route('/api/elibrary', methods=['GET', 'POST'])
 @login_required
@@ -3031,8 +3044,7 @@ def upload_personal_documents():
         import uuid
         from werkzeug.utils import secure_filename
         
-        upload_dir = os.path.join(app.root_path, 'static', 'uploads', 'documents')
-        os.makedirs(upload_dir, exist_ok=True)
+        upload_dir = get_upload_dir('documents')
         
         def save_file(file_key, allowed_extensions=None, compulsory=False, existing_url=None):
             file = request.files.get(file_key)
@@ -3128,8 +3140,7 @@ def upload_company_documents(employee_id):
         import uuid
         from werkzeug.utils import secure_filename
         
-        upload_dir = os.path.join(app.root_path, 'static', 'uploads', 'documents')
-        os.makedirs(upload_dir, exist_ok=True)
+        upload_dir = get_upload_dir('documents')
         
         new_docs = []
         for file, title in zip(uploaded_files, titles):
@@ -4369,8 +4380,7 @@ def submit_onboarding_info():
             from werkzeug.utils import secure_filename
             import uuid as _uuid
 
-            upload_dir = os.path.join(app.root_path, 'static', 'uploads', 'documents')
-            os.makedirs(upload_dir, exist_ok=True)
+            upload_dir = get_upload_dir('documents')
 
             def save_onboard_file(field_key, allowed_ext=None):
                 f = request.files.get(field_key)
@@ -4456,6 +4466,10 @@ def submit_onboarding_info():
 def catch_all(path):
     # Serve backend static uploads (certificates, documents, etc.)
     if path.startswith("static/"):
+        if (os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV")) and path.startswith("static/uploads/"):
+            tmp_path = os.path.join("/tmp", path)
+            if os.path.isfile(tmp_path):
+                return send_from_directory("/tmp", path)
         requested_file = os.path.join(app.root_path, path)
         if os.path.isfile(requested_file):
             return send_from_directory(app.root_path, path)
