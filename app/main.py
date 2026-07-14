@@ -1522,6 +1522,39 @@ def handle_quotes():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+@app.route('/api/daily-pulse/today', methods=['GET'])
+@login_required
+def get_today_daily_pulse():
+    try:
+        tenant_id = g.current_user["tenant_id"]
+        today = datetime.datetime.now().date().isoformat()
+        pulse = db.daily_pulse_schedule.find_one({"date": today, "tenant_id": tenant_id})
+        if pulse:
+            return jsonify({
+                "quote": pulse["quote"],
+                "author": pulse.get("author", "Unknown"),
+                "date": pulse["date"]
+            })
+            
+        quotes = list(db.quotes.find({}))
+        if not quotes:
+            quotes = [
+                {"text": "The only way to do great work is to love what you do.", "author": "Steve Jobs"},
+                {"text": "Success is not final, failure is not fatal: it is the courage to continue that counts.", "author": "Winston Churchill"},
+                {"text": "Believe you can and you're halfway there.", "author": "Theodore Roosevelt"},
+                {"text": "Act as if what you do makes a difference. It does.", "author": "William James"}
+            ]
+            
+        day_of_year = datetime.datetime.now().timetuple().tm_yday
+        selected = quotes[day_of_year % len(quotes)]
+        return jsonify({
+            "quote": selected.get("text") or selected.get("quote"),
+            "author": selected.get("author", "Unknown"),
+            "date": today
+        })
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
 @app.route('/api/daily-pulse/schedule', methods=['GET'])
 @login_required
 def get_daily_pulse_schedule():
