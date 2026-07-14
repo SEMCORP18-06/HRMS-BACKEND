@@ -14,12 +14,13 @@ def run_test():
         "name": "Test User",
         "email": "test@company.com",
         "role": "QA Architect",
+        "designation": "QA Architect",
         "department": "Quality Assurance",
         "status": "ACTIVE"
     }
     
     payroll = {
-        "base_salary": 7500.0,
+        "basic_salary": 7500.0,
         "allowances": 1250.0,
         "deductions": 600.0,
         "pay_period": "2026-06"
@@ -61,9 +62,9 @@ def run_test():
     print(f"[TEST] Decryption success status: {decrypt_success_status}")
     
     text = reader.pages[0].extract_text()
-    assert "SALARY BREAKUP" in text, "Could not find payslip text in decrypted PDF!"
+    assert "Salary Slip" in text, "Could not find payslip text in decrypted PDF!"
     assert "QA Architect" in text, "Could not find employee role in decrypted PDF!"
-    assert "$7500.00" in text, "Could not find base salary amount in decrypted PDF!"
+    assert "7,500.00" in text, "Could not find base salary amount in decrypted PDF!"
     print("[TEST] Verified decrypted content is accurate and complete.")
     
     # Clean up test output
