@@ -3624,19 +3624,36 @@ def handle_policies():
     try:
         tenant_id = g.current_user["tenant_id"]
         if request.method == 'POST':
-            data = request.json or {}
-            category = data.get('category')
-            title = data.get('title')
-            content = data.get('content')
+            category = request.form.get('category')
+            title = request.form.get('title')
+            content = request.form.get('content')
             
             if not title or not content or not category:
                 return jsonify({"detail": "category, title, and content are required"}), 400
                 
+            file_url = None
+            file_name = None
+            if 'file' in request.files:
+                file = request.files['file']
+                if file and file.filename != '':
+                    from werkzeug.utils import secure_filename
+                    import os
+                    import uuid
+                    filename = secure_filename(file.filename)
+                    upload_dir = get_upload_dir('policies')
+                    unique_filename = f"{uuid.uuid4().hex}_{filename}"
+                    filepath = os.path.join(upload_dir, unique_filename)
+                    file.save(filepath)
+                    file_url = f"/static/uploads/policies/{unique_filename}"
+                    file_name = filename
+                    
             res = db.policies.insert_one({
                 "tenant_id": tenant_id,
                 "category": category,
                 "title": title,
-                "content": content
+                "content": content,
+                "file_url": file_url,
+                "file_name": file_name
             })
             p = db.policies.find_one({"_id": res.inserted_id})
             return jsonify(serialize_doc(p))
