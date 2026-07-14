@@ -848,6 +848,9 @@ def handle_single_employee(emp_id):
                         update_set["status"] = "ACTIVE"
                     to_email = personal_email or (existing_emp.get("personal_email") if existing_emp else "")
                     if to_email:
+                        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
+                        host = request.headers.get("Host", "localhost:8000")
+                        portal_link = f"{scheme}://{host}/"
                         subject = "Portal Access Granted via Personal Email"
                         body = f"""
                         <html>
@@ -858,7 +861,7 @@ def handle_single_employee(emp_id):
                                     <p>HR has approved your request to access the SEMCO Groups HR Portal using your personal email address.</p>
                                     <p>You can now register/sign up and log in using your personal email: <strong>{to_email}</strong>.</p>
                                     <div style="margin: 24px 0;">
-                                        <a href="http://localhost:8000/auth" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #15803d, #1d4ed8); color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                                        <a href="{portal_link}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #15803d, #1d4ed8); color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
                                             Go to Portal Sign Up
                                         </a>
                                     </div>
@@ -3212,7 +3215,9 @@ def trigger_offboarding(employee_id):
         # 2. Email Employee with portal link
         emp_subject = "Offboarding Initiated"
         target_email = emp.get("personal_email") or emp.get("email")
-        portal_link = "http://localhost:3000/" # Secure link to personal Employee Portal dashboard
+        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
+        host = request.headers.get("Host", "localhost:8000")
+        portal_link = f"{scheme}://{host}/"
         
         emp_body = f"""
         <html>
@@ -4182,9 +4187,9 @@ def send_onboarding_invite():
             upsert=True
         )
         
-        invite_link = f"http://localhost:8000/invite/activate?token={token}"
-        if request.headers.get("Host"):
-            invite_link = f"http://{request.headers.get('Host')}/invite/activate?token={token}"
+        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
+        host = request.headers.get("Host", "localhost:8000")
+        invite_link = f"{scheme}://{host}/invite/activate?token={token}"
             
         subject = "Invitation to Onboard at SEMCO Groups"
         body = f"""
