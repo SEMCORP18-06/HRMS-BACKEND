@@ -13,84 +13,133 @@ scheduler = BackgroundScheduler()
 def ensure_daily_pulse_schedule(year, month):
     try:
         tenant_id = "semco"
+        
+        # Get all Mondays in this month
+        import calendar
+        num_days = calendar.monthrange(year, month)[1]
+        mondays = []
+        for d in range(1, num_days + 1):
+            date_obj = datetime(year, month, d)
+            if date_obj.weekday() == 0:  # 0 is Monday
+                mondays.append(date_obj.date().isoformat())
+                
+        if not mondays:
+            return
+            
         # Check if schedule already exists for this year and month
         existing_count = db.daily_pulse_schedule.count_documents({
             "tenant_id": tenant_id,
             "date": {"$regex": f"^{year}-{month:02d}-"}
         })
-        if existing_count >= 3:
+        if existing_count >= len(mondays):
             return
             
-        # Get all business days in this month
-        import calendar
-        num_days = calendar.monthrange(year, month)[1]
-        business_days = []
-        for d in range(1, num_days + 1):
-            date_obj = datetime(year, month, d)
-            if date_obj.weekday() < 5:  # Monday to Friday
-                business_days.append(date_obj.date().isoformat())
-                
-        if len(business_days) < 3:
-            return
-            
-        # Pick exactly 3 spaced out business days (e.g. index N//4, N//2, 3*N//4)
-        n = len(business_days)
-        selected_indices = [n // 4, n // 2, (3 * n) // 4]
-        
         quotes = list(db.quotes.find({}))
         if not quotes:
-            # Seed default quotes if library is empty
+            # Seed 100 default quotes if library is empty
             default_quotes = [
                 {"text": "The only way to do great work is to love what you do.", "author": "Steve Jobs"},
-                {"text": "Success is not final, failure is not fatal: it is the courage to continue that counts.", "author": "Winston Churchill"},
-                {"text": "Believe you can and you're halfway there.", "author": "Theodore Roosevelt"},
-                {"text": "Act as if what you do makes a difference. It does.", "author": "William James"},
-                {"text": "It is during our darkest moments that we must focus to see the light.", "author": "Aristotle Onassis"},
-                {"text": "Do not go where the path may lead, go instead where there is no path and leave a trail.", "author": "Ralph Waldo Emerson"},
-                {"text": "In the end, it's not the years in your life that count. It's the life in your years.", "author": "Abraham Lincoln"},
-                {"text": "Never let the fear of striking out keep you from playing the game.", "author": "Babe Ruth"},
-                {"text": "Keep smiling, because life is a beautiful thing and there's so much to smile about.", "author": "Marilyn Monroe"},
-                {"text": "The greatest glory in living lies not in never falling, but in rising every time we fall.", "author": "Nelson Mandela"},
-                {"text": "The way to get started is to quit talking and begin doing.", "author": "Walt Disney"},
                 {"text": "Your time is limited, so don't waste it living someone else's life.", "author": "Steve Jobs"},
-                {"text": "If life were predictable it would cease to be life, and be without flavor.", "author": "Eleanor Roosevelt"},
-                {"text": "If you look at what you have in life, you'll always have more.", "author": "Oprah Winfrey"},
-                {"text": "If you set your goals ridiculously high and it's a failure, you will fail above everyone else's success.", "author": "James Cameron"},
-                {"text": "Life is what happens when you're busy making other plans.", "author": "John Lennon"},
-                {"text": "Spread love everywhere you go. Let no one ever come to you without leaving happier.", "author": "Mother Teresa"},
-                {"text": "When you reach the end of your rope, tie a knot in it and hang on.", "author": "Franklin D. Roosevelt"},
-                {"text": "Always remember that you are absolutely unique. Just like everyone else.", "author": "Margaret Mead"},
-                {"text": "Don't judge each day by the harvest you reap but by the seeds that you plant.", "author": "Robert Louis Stevenson"},
+                {"text": "Have the courage to follow your heart and intuition.", "author": "Steve Jobs"},
+                {"text": "Stay hungry, stay foolish.", "author": "Steve Jobs"},
+                {"text": "Innovation distinguishes between a leader and a follower.", "author": "Steve Jobs"},
+                {"text": "Success is not final, failure is not fatal: it is the courage to continue that counts.", "author": "Winston Churchill"},
+                {"text": "If you are going through hell, keep going.", "author": "Winston Churchill"},
+                {"text": "Success is stumbling from failure to failure with no loss of enthusiasm.", "author": "Winston Churchill"},
+                {"text": "We make a living by what we get, but we make a life by what we give.", "author": "Winston Churchill"},
+                {"text": "Attitude is a little thing that makes a big difference.", "author": "Winston Churchill"},
+                {"text": "Believe you can and you're halfway there.", "author": "Theodore Roosevelt"},
+                {"text": "Do what you can, with what you have, where you are.", "author": "Theodore Roosevelt"},
+                {"text": "It is hard to fail, but it is worse never to have tried to succeed.", "author": "Theodore Roosevelt"},
+                {"text": "Far and away the best prize that life has to offer is the chance to work hard at work worth doing.", "author": "Theodore Roosevelt"},
+                {"text": "With self-discipline, almost anything is possible.", "author": "Theodore Roosevelt"},
+                {"text": "Act as if what you do makes a difference. It does.", "author": "William James"},
+                {"text": "The greatest discovery of my generation is that a human being can alter his life by altering his attitudes.", "author": "William James"},
+                {"text": "Believe that life is worth living and your belief will help create the fact.", "author": "William James"},
+                {"text": "The art of being wise is the art of knowing what to overlook.", "author": "William James"},
                 {"text": "The future belongs to those who believe in the beauty of their dreams.", "author": "Eleanor Roosevelt"},
-                {"text": "Tell me and I forget. Teach me and I remember. Involve me and I learn.", "author": "Benjamin Franklin"},
-                {"text": "The best and most beautiful things in the world cannot be seen or even touched - they must be felt with the heart.", "author": "Helen Keller"},
-                {"text": "It is method, not raw talent, that yields success.", "author": "Unknown"},
-                {"text": "You miss 100% of the shots you don't take.", "author": "Wayne Gretzky"},
-                {"text": "I have learned over the years that when one's mind is made up, this diminishes fear.", "author": "Rosa Parks"},
+                {"text": "No one can make you feel inferior without your consent.", "author": "Eleanor Roosevelt"},
+                {"text": "Do one thing every day that scares you.", "author": "Eleanor Roosevelt"},
+                {"text": "Great minds discuss ideas; average minds discuss events; small minds discuss people.", "author": "Eleanor Roosevelt"},
+                {"text": "The giving of love is an education in itself.", "author": "Eleanor Roosevelt"},
+                {"text": "Spread love everywhere you go. Let no one ever come to you without leaving happier.", "author": "Mother Teresa"},
                 {"text": "I alone cannot change the world, but I can cast a stone across the waters to create many ripples.", "author": "Mother Teresa"},
-                {"text": "Nothing is impossible, the word itself says, 'I'm possible!'", "author": "Audrey Hepburn"},
-                {"text": "The question isn't who is going to let me; it's who is going to stop me.", "author": "Ayn Rand"},
-                {"text": "The only person you are destined to become is the person you decide to be.", "author": "Ralph Waldo Emerson"},
-                {"text": "We can easily forgive a child who is afraid of the dark; the real tragedy of life is when men are afraid of the light.", "author": "Plato"},
-                {"text": "Difficulties strengthen the mind, as labor does the body.", "author": "Seneca"},
+                {"text": "Kind words can be short and easy to speak, but their echoes are truly endless.", "author": "Mother Teresa"},
+                {"text": "If you judge people, you have no time to love them.", "author": "Mother Teresa"},
+                {"text": "Peace begins with a smile.", "author": "Mother Teresa"},
                 {"text": "If you want to live a happy life, tie it to a goal, not to people or things.", "author": "Albert Einstein"},
+                {"text": "In the middle of difficulty lies opportunity.", "author": "Albert Einstein"},
+                {"text": "A person who never made a mistake never tried anything new.", "author": "Albert Einstein"},
+                {"text": "Imagination is more important than knowledge.", "author": "Albert Einstein"},
+                {"text": "Try not to become a man of success, but rather try to become a man of value.", "author": "Albert Einstein"},
                 {"text": "The start is the most important part of the work.", "author": "Plato"},
+                {"text": "Knowing yourself is the beginning of all wisdom.", "author": "Aristotle"},
                 {"text": "Quality is not an act, it is a habit.", "author": "Aristotle"},
                 {"text": "Well begun is half done.", "author": "Aristotle"},
+                {"text": "Excellence is never an accident. It is always the result of high intention.", "author": "Aristotle"},
                 {"text": "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", "author": "Aristotle"},
-                {"text": "Be kind, for everyone you meet is fighting a harder battle.", "author": "Plato"},
+                {"text": "He who overcomes himself is the mightiest warrior.", "author": "Lao Tzu"},
+                {"text": "The journey of a thousand miles begins with one step.", "author": "Lao Tzu"},
+                {"text": "Silence is a source of great strength.", "author": "Lao Tzu"},
+                {"text": "A good traveler has no fixed plans and is not intent on arriving.", "author": "Lao Tzu"},
+                {"text": "Kindness in words creates confidence. Kindness in thinking creates profoundness.", "author": "Lao Tzu"},
+                {"text": "It does not matter how slowly you go as long as you do not stop.", "author": "Confucius"},
+                {"text": "Our greatest glory is not in never falling, but in rising every time we fall.", "author": "Confucius"},
+                {"text": "Life is really simple, but we insist on making it complicated.", "author": "Confucius"},
+                {"text": "Real knowledge is to know the extent of one's ignorance.", "author": "Confucius"},
+                {"text": "The will to win, the desire to succeed, the urge to reach your full potential... these are the keys.", "author": "Confucius"},
+                {"text": "When you reach the end of your rope, tie a knot in it and hang on.", "author": "Franklin D. Roosevelt"},
+                {"text": "The only limit to our realization of tomorrow will be our doubts of today.", "author": "Franklin D. Roosevelt"},
+                {"text": "Happiness lies in the joy of achievement and the thrill of creative effort.", "author": "Franklin D. Roosevelt"},
+                {"text": "The greatest glory in living lies not in never falling, but in rising every time we fall.", "author": "Nelson Mandela"},
+                {"text": "It always seems impossible until it's done.", "author": "Nelson Mandela"},
+                {"text": "Education is the most powerful weapon which you can use to change the world.", "author": "Nelson Mandela"},
+                {"text": "For to be free is not merely to cast off one's chains, but to live in a way that respects and enhances the freedom of others.", "author": "Nelson Mandela"},
+                {"text": "A winner is a dreamer who never gives up.", "author": "Nelson Mandela"},
+                {"text": "Do not go where the path may lead, go instead where there is no path and leave a trail.", "author": "Ralph Waldo Emerson"},
+                {"text": "The only person you are destined to become is the person you decide to be.", "author": "Ralph Waldo Emerson"},
+                {"text": "To be yourself in a world that is constantly trying to make you something else is the greatest accomplishment.", "author": "Ralph Waldo Emerson"},
+                {"text": "What lies behind us and what lies before us are tiny matters compared to what lies within us.", "author": "Ralph Waldo Emerson"},
+                {"text": "Adopt the pace of nature: her secret is patience.", "author": "Ralph Waldo Emerson"},
+                {"text": "In the end, it's not the years in your life that count. It's the life in your years.", "author": "Abraham Lincoln"},
+                {"text": "Whatever you are, be a good one.", "author": "Abraham Lincoln"},
+                {"text": "Leave nothing for tomorrow which can be done today.", "author": "Abraham Lincoln"},
+                {"text": "I am a slow walker, but I never walk back.", "author": "Abraham Lincoln"},
+                {"text": "Whether you think you can, or you think you can't--you're right.", "author": "Henry Ford"},
+                {"text": "Failure is simply the opportunity to begin again, this time more intelligently.", "author": "Henry Ford"},
+                {"text": "Coming together is a beginning; keeping together is progress; working together is success.", "author": "Henry Ford"},
+                {"text": "Quality means doing it right when no one is looking.", "author": "Henry Ford"},
+                {"text": "You will face many defeats in life, but never let yourself be defeated.", "author": "Maya Angelou"},
+                {"text": "Try to be a rainbow in someone's cloud.", "author": "Maya Angelou"},
+                {"text": "We may encounter many defeats but we must not be defeated.", "author": "Maya Angelou"},
+                {"text": "Nothing can dim the light which shines from within.", "author": "Maya Angelou"},
+                {"text": "The best and most beautiful things in the world cannot be seen or even touched - they must be felt with the heart.", "author": "Helen Keller"},
+                {"text": "Keep your face to the sunshine and you cannot see a shadow.", "author": "Helen Keller"},
+                {"text": "Optimism is the faith that leads to achievement. Nothing can be done without hope and confidence.", "author": "Helen Keller"},
+                {"text": "Alone we can do so little; together we can do so many.", "author": "Helen Keller"},
+                {"text": "You have power over your mind - not outside events. Realize this, and you will find strength.", "author": "Marcus Aurelius"},
+                {"text": "The happiness of your life depends upon the quality of your thoughts.", "author": "Marcus Aurelius"},
+                {"text": "Waste no more time arguing about what a good man should be. Be one.", "author": "Marcus Aurelius"},
+                {"text": "Difficulties strengthen the mind, as labor does the body.", "author": "Seneca"},
+                {"text": "Luck is what happens when preparation meets opportunity.", "author": "Seneca"},
+                {"text": "Associate with people who are likely to improve you.", "author": "Seneca"},
+                {"text": "Nothing is impossible, the word itself says, 'I'm possible!'", "author": "Audrey Hepburn"},
+                {"text": "The question isn't who is going to let me; it's who is going to stop me.", "author": "Ayn Rand"},
+                {"text": "We can easily forgive a child who is afraid of the dark; the real tragedy of life is when men are afraid of the light.", "author": "Plato"},
                 {"text": "Small opportunities are often the beginning of great enterprises.", "author": "Demosthenes"},
                 {"text": "The mind is not a vessel to be filled, but a fire to be kindled.", "author": "Plutarch"},
                 {"text": "Perseverance is the hard work you do after you get tired of doing the hard work you already did.", "author": "Newt Gingrich"},
                 {"text": "Opportunities multiply as they are seized.", "author": "Sun Tzu"},
-                {"text": "Knowing yourself is the beginning of all wisdom.", "author": "Aristotle"},
-                {"text": "It does not matter how slowly you go as long as you do not stop.", "author": "Confucius"},
-                {"text": "Our greatest glory is not in never falling, but in rising every time we fall.", "author": "Confucius"},
-                {"text": "He who overcomes himself is the mightiest warrior.", "author": "Lao Tzu"},
-                {"text": "The journey of a thousand miles begins with one step.", "author": "Lao Tzu"},
-                {"text": "Care about what other people think and you will always be their prisoner.", "author": "Lao Tzu"},
-                {"text": "Silence is a source of great strength.", "author": "Lao Tzu"},
-                {"text": "There is no road to path, path is made by walking.", "author": "Antonio Machado"}
+                {"text": "There is no road to path, path is made by walking.", "author": "Antonio Machado"},
+                {"text": "You miss 100% of the shots you don't take.", "author": "Wayne Gretzky"},
+                {"text": "Never let the fear of striking out keep you from playing the game.", "author": "Babe Ruth"},
+                {"text": "Keep smiling, because life is a beautiful thing and there's so much to smile about.", "author": "Marilyn Monroe"},
+                {"text": "When you have a dream, you've got to grab it and never let go.", "author": "Carol Burnett"},
+                {"text": "I can't change the direction of the wind, but I can adjust my sails to always reach my destination.", "author": "Jimmy Dean"},
+                {"text": "No act of kindness, no matter how small, is ever wasted.", "author": "Aesop"},
+                {"text": "What you get by achieving your goals is not as important as what you become by achieving your goals.", "author": "Zig Ziglar"},
+                {"text": "It is during our darkest moments that we must focus to see the light.", "author": "Aristotle Onassis"},
+                {"text": "Happiness is not something ready made. It comes from your own actions.", "author": "Dalai Lama"}
             ]
             db.quotes.insert_many(default_quotes)
             quotes = list(db.quotes.find({}))
@@ -102,13 +151,12 @@ def ensure_daily_pulse_schedule(year, month):
         unused_quotes = [q for q in quotes if q.get("text") not in used_quote_texts]
         
         # Fallback to all quotes if we ran out of unused ones
-        if len(unused_quotes) < 3:
+        if len(unused_quotes) < len(mondays):
             unused_quotes = quotes
             
-        selected_quotes = random.sample(unused_quotes, 3) if len(unused_quotes) >= 3 else (unused_quotes * 3)[:3]
+        selected_quotes = random.sample(unused_quotes, len(mondays)) if len(unused_quotes) >= len(mondays) else (unused_quotes * len(mondays))[:len(mondays)]
         
-        for i, idx in enumerate(selected_indices):
-            target_date = business_days[idx]
+        for i, target_date in enumerate(mondays):
             existing = db.daily_pulse_schedule.find_one({"tenant_id": tenant_id, "date": target_date})
             if not existing:
                 db.daily_pulse_schedule.insert_one({
@@ -120,7 +168,7 @@ def ensure_daily_pulse_schedule(year, month):
                     "status": "Scheduled",
                     "delivered_at": None
                 })
-        print(f"[SCHEDULER] Generated 3 spaced business-day Daily Pulses for {year}-{month:02d}.")
+        print(f"[SCHEDULER] Generated weekly (Monday) Daily Pulses for {year}-{month:02d}.")
     except Exception as e:
         print(f"[SCHEDULER] Error generating Daily Pulse schedule: {str(e)}")
 
