@@ -1899,10 +1899,37 @@ def send_appreciation(appreciation_id):
         reason = appr["reason"]
         date_str = appr["date"]
         
-        # Resolve awardee's personal_email if registered
+        # Resolve awardee's personal_email and profile photo if registered
         awardee = db.employees.find_one({"email": email, "tenant_id": tenant_id})
         personal_email = awardee.get("personal_email") if awardee else None
         
+        photo_html = ""
+        if a_type == 'MONTH' and awardee:
+            photo_url = None
+            doc_vault = db.employee_documents.find_one({"employee_id": awardee["_id"]})
+            if doc_vault and doc_vault.get("personal_documents"):
+                photo_url = doc_vault["personal_documents"].get("profile_photo_url")
+            
+            # Construct absolute URL if it is a relative path
+            if photo_url and photo_url.startswith('/'):
+                base_url = request.host_url.rstrip('/')
+                if "vercel" in base_url or os.environ.get("VERCEL"):
+                    base_url = base_url.replace("http://", "https://")
+                photo_url = f"{base_url}{photo_url}"
+            
+            if not photo_url:
+                import urllib.parse
+                encoded_name = urllib.parse.quote_plus(name)
+                photo_url = f"https://ui-avatars.com/api/?name={encoded_name}&background=8b5cf6&color=fff&size=200&rounded=true"
+                
+            photo_html = f"""
+            <div style="text-align: center; margin: 25px 0;">
+                <div style="display: inline-block; width: 140px; height: 140px; border-radius: 50%; overflow: hidden; border: 4px solid #8b5cf6; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+                    <img src="{photo_url}" alt="{name}" style="width: 100%; height: 100%; object-fit: cover; display: block;" />
+                </div>
+            </div>
+            """
+            
         subject = ""
         attachment_path = None
         attachment_name = None
@@ -1937,6 +1964,8 @@ def send_appreciation(appreciation_id):
                             {type_label}
                         </span>
                     </div>
+                    
+                    {photo_html}
                     
                     <p style="font-size: 16px; color: #334155; line-height: 1.6;">
                         Dear <b>{name}</b>,<br><br>
@@ -1976,6 +2005,9 @@ def send_appreciation(appreciation_id):
             
             recipients = list(db.employees.find({"_id": {"$in": rec_object_ids}}))
             
+            dept = awardee.get("department", "General") if awardee else "General"
+            desg = (awardee.get("designation") or awardee.get("role") or "Employee") if awardee else "Employee"
+            
             announce_subject = f"Company Announcement: Celebrating Employee Milestones! 🌟🎉"
             announce_body = f"""
             <html>
@@ -1983,9 +2015,16 @@ def send_appreciation(appreciation_id):
                     <div style="background-color: white; padding: 40px; border-radius: 16px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-top: 8px solid #8b5cf6; text-align: center;">
                         <span style="font-size: 50px;">🎉🌟</span>
                         <h2 style="color: #6d28d9; margin-top: 15px; font-size: 22px;">Celebrating Employee Milestone!</h2>
+                        
+                        {photo_html}
+                        
                         <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin-top: 20px;">
                             Dear Team,<br><br>
                             We are proud to announce that <b>{name}</b> has been awarded the <b>{type_label}</b> on <b>{date_str}</b>.
+                        </p>
+                        <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin: 6px 0;">
+                            <strong>Department:</strong> {dept}<br>
+                            <strong>Designation:</strong> {desg}
                         </p>
                         <div style="background-color: #faf5ff; border: 1px solid #ddd6fe; padding: 20px; margin: 20px 0; border-radius: 10px; text-align: left; font-style: italic; color: #4c1d95;">
                             "{reason}"
