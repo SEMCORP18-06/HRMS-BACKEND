@@ -51,28 +51,7 @@ def seed_db():
     db.tenants.insert_many(tenants)
     
     # Employees
-    today = datetime.date.today().isoformat()
-    employees = [
-        {
-            "tenant_id": "semco",
-            "emp_id": "SEMCO-001",
-            "name": "John Doe",
-            "email": "john@semcogroups.com",
-            "password": "password123",
-            "designation": "HR Operations Manager",
-            "role": "Admin (HR)",
-            "department": "People Ops",
-            "dob": "1990-01-01",
-            "doj": today,
-            "personal_email": "john.personal@gmail.com",
-            "current_address": "123 Main St, New York, NY",
-            "office_contact": "+1-555-0199",
-            "personal_contact": "+1-555-0100",
-            "status": "ACTIVE",
-            "system_access_revoked": 0
-        }
-    ]
-    db.employees.insert_many(employees)
+    pass
     
     # Empty structures
     
