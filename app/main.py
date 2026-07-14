@@ -3626,10 +3626,10 @@ def handle_policies():
         if request.method == 'POST':
             category = request.form.get('category')
             title = request.form.get('title')
-            content = request.form.get('content')
+            content = request.form.get('content') or ''
             
-            if not title or not content or not category:
-                return jsonify({"detail": "category, title, and content are required"}), 400
+            if not title or not category:
+                return jsonify({"detail": "category and title are required"}), 400
                 
             file_url = None
             file_name = None
