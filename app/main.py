@@ -618,8 +618,7 @@ def handle_employees():
         try:
             active_only = request.args.get('active_only', 'false').lower() == 'true'
             query = {
-                "tenant_id": tenant_id,
-                "role": {"$ne": "Admin (HR)"}
+                "tenant_id": tenant_id
             }
             if active_only:
                 query["status"] = "ACTIVE"
