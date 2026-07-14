@@ -38,6 +38,38 @@ def get_upload_dir(*paths):
         upload_dir = os.path.join(app.root_path, "static", "uploads", *paths)
     os.makedirs(upload_dir, exist_ok=True)
     return upload_dir
+import base64
+
+def convert_file_to_base64_uri(file, allowed_ext=None):
+    if not file or file.filename == '':
+        return None
+    fname = file.filename.lower()
+    ext = os.path.splitext(fname)[1]
+    if allowed_ext and ext not in allowed_ext:
+        return None
+    file_bytes = file.read()
+    file.seek(0)
+    
+    mime_type = "application/octet-stream"
+    if ext == ".pdf":
+        mime_type = "application/pdf"
+    elif ext in [".jpg", ".jpeg"]:
+        mime_type = "image/jpeg"
+    elif ext == ".png":
+        mime_type = "image/png"
+    elif ext == ".webp":
+        mime_type = "image/webp"
+    elif ext == ".gif":
+        mime_type = "image/gif"
+    elif ext == ".svg":
+        mime_type = "image/svg+xml"
+    elif ext == ".docx":
+        mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif ext == ".xlsx":
+        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        
+    base64_data = base64.b64encode(file_bytes).decode('utf-8')
+    return f"data:{mime_type};base64,{base64_data}"
 
 @app.before_request
 def handle_options_preflight():
@@ -3062,11 +3094,12 @@ def upload_personal_documents():
                 if ext not in allowed_extensions:
                     raise ValueError(f"File format for '{file_key}' is restricted. Allowed: {', '.join(allowed_extensions)}")
                     
-            safe_name = secure_filename(file.filename)
-            unique_name = f"{uuid.uuid4().hex}_{safe_name}"
-            filepath = os.path.join(upload_dir, unique_name)
-            file.save(filepath)
-            return f"/static/uploads/documents/{unique_name}"
+            b64_uri = convert_file_to_base64_uri(file, allowed_extensions)
+            if not b64_uri:
+                if compulsory and not existing_url:
+                    raise ValueError(f"Document '{file_key}' is compulsory.")
+                return existing_url
+            return b64_uri
 
         try:
             aadhaar_url = save_file('aadhaar', allowed_extensions=['.pdf'], compulsory=True, existing_url=existing_personal.get('aadhaar_url'))
@@ -3148,16 +3181,14 @@ def upload_company_documents(employee_id):
         new_docs = []
         for file, title in zip(uploaded_files, titles):
             if file and file.filename != '' and title:
-                safe_name = secure_filename(file.filename)
-                unique_name = f"{uuid.uuid4().hex}_{safe_name}"
-                filepath = os.path.join(upload_dir, unique_name)
-                file.save(filepath)
-                new_docs.append({
-                    "id": uuid.uuid4().hex,
-                    "title": title,
-                    "file_url": f"/static/uploads/documents/{unique_name}",
-                    "upload_date": datetime.datetime.now().isoformat()
-                })
+                b64_uri = convert_file_to_base64_uri(file)
+                if b64_uri:
+                    new_docs.append({
+                        "id": uuid.uuid4().hex,
+                        "title": title,
+                        "file_url": b64_uri,
+                        "upload_date": datetime.datetime.now().isoformat()
+                    })
                 
         merged_docs = existing_docs + new_docs
         
@@ -4396,11 +4427,8 @@ def submit_onboarding_info():
                     ext = os.path.splitext(fname)[1]
                     if ext not in allowed_ext:
                         return None
-                safe_name = secure_filename(f.filename)
-                unique_name = f"{_uuid.uuid4().hex}_{safe_name}"
-                filepath = os.path.join(upload_dir, unique_name)
-                f.save(filepath)
-                return f"/static/uploads/documents/{unique_name}"
+                b64_uri = convert_file_to_base64_uri(f, allowed_ext)
+                return b64_uri
 
             # Collect personal document fields submitted during onboarding
             bank_name        = data.get('bank_name', '')
