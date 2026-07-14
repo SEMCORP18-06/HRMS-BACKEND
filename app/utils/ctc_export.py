@@ -104,6 +104,20 @@ def generate_pdf(calc_result, employee_data, location, output_path):
         return format_currency(calc_result.get(key, 0))
         
     def val_y(key):
+        if key == 'pt' and 'pt_yearly' in calc_result:
+            return format_currency(calc_result.get('pt_yearly'))
+        if key == 'totalDeductions' and 'pt_yearly' in calc_result:
+            pf_y = calc_result.get('employeePF', 0) * 12
+            esic_y = calc_result.get('employeeESIC', 0) * 12
+            pt_y = calc_result.get('pt_yearly', 0)
+            return format_currency(pf_y + esic_y + pt_y)
+        if key == 'netTakeHome' and 'pt_yearly' in calc_result:
+            gross_y = calc_result.get('finalGross', 0) * 12
+            pf_y = calc_result.get('employeePF', 0) * 12
+            esic_y = calc_result.get('employeeESIC', 0) * 12
+            pt_y = calc_result.get('pt_yearly', 0)
+            deductions_y = pf_y + esic_y + pt_y
+            return format_currency(gross_y - deductions_y)
         return format_currency(calc_result.get(key, 0) * 12)
 
     # 3. Main Breakup Grid Table
@@ -258,6 +272,20 @@ def generate_excel(calc_result, employee_data, location, output_path):
         return calc_result.get(key, 0.0)
         
     def val_y(key):
+        if key == 'pt' and 'pt_yearly' in calc_result:
+            return calc_result.get('pt_yearly', 0.0)
+        if key == 'totalDeductions' and 'pt_yearly' in calc_result:
+            pf_y = calc_result.get('employeePF', 0.0) * 12
+            esic_y = calc_result.get('employeeESIC', 0.0) * 12
+            pt_y = calc_result.get('pt_yearly', 0.0)
+            return pf_y + esic_y + pt_y
+        if key == 'netTakeHome' and 'pt_yearly' in calc_result:
+            gross_y = calc_result.get('finalGross', 0.0) * 12
+            pf_y = calc_result.get('employeePF', 0.0) * 12
+            esic_y = calc_result.get('employeeESIC', 0.0) * 12
+            pt_y = calc_result.get('pt_yearly', 0.0)
+            deductions_y = pf_y + esic_y + pt_y
+            return gross_y - deductions_y
         return calc_result.get(key, 0.0) * 12
 
     rows_data = [
@@ -471,6 +499,20 @@ def generate_word(calc_result, employee_data, location, output_path):
         return format_currency(calc_result.get(key, 0))
         
     def val_y(key):
+        if key == 'pt' and 'pt_yearly' in calc_result:
+            return format_currency(calc_result.get('pt_yearly'))
+        if key == 'totalDeductions' and 'pt_yearly' in calc_result:
+            pf_y = calc_result.get('employeePF', 0) * 12
+            esic_y = calc_result.get('employeeESIC', 0) * 12
+            pt_y = calc_result.get('pt_yearly', 0)
+            return format_currency(pf_y + esic_y + pt_y)
+        if key == 'netTakeHome' and 'pt_yearly' in calc_result:
+            gross_y = calc_result.get('finalGross', 0) * 12
+            pf_y = calc_result.get('employeePF', 0) * 12
+            esic_y = calc_result.get('employeeESIC', 0) * 12
+            pt_y = calc_result.get('pt_yearly', 0)
+            deductions_y = pf_y + esic_y + pt_y
+            return format_currency(gross_y - deductions_y)
         return format_currency(calc_result.get(key, 0) * 12)
 
     grid_rows = [
