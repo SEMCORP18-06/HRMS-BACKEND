@@ -1961,8 +1961,9 @@ def send_appreciation(appreciation_id):
             subject = f"Congratulations on your Certificate of Appreciation! 📜🎓"
             if appr.get("certificate_url"):
                 import os
-                rel_path = appr["certificate_url"].lstrip('/')
-                attachment_path = os.path.join(app.root_path, rel_path)
+                unique_filename = appr["certificate_url"].split('/')[-1]
+                upload_dir = get_upload_dir('certificates')
+                attachment_path = os.path.join(upload_dir, unique_filename)
                 attachment_name = appr.get("certificate_filename", "Certificate.pdf")
         elif a_type == 'CARD':
             subject = f"Great Job! You received a Job Well Done Card 🌟🙌"
@@ -2055,10 +2056,14 @@ def send_appreciation(appreciation_id):
             </html>
             """
             
+            broadcast_emails = []
             for rec in recipients:
                 rec_company_email = rec.get("email")
                 if rec_company_email:
-                    send_email(rec_company_email, announce_subject, announce_body, inline_images=inline_images)
+                    broadcast_emails.append(rec_company_email)
+            
+            if broadcast_emails:
+                send_email(", ".join(broadcast_emails), announce_subject, announce_body, inline_images=inline_images)
         
         db.appreciations.update_one({"_id": ObjectId(appreciation_id)}, {"$set": {"status": "SENT"}})
         return jsonify({"message": "Appreciation and announcement emails dispatched successfully!"})
