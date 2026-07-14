@@ -18,7 +18,13 @@ seed_db()
 init_scheduler()
 
 # Configure Flask to serve the Vite frontend build folder
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "frontend", "dist"))
+# Fallback to local static folder if frontend/dist doesn't exist (e.g. on Vercel serverless deployment)
+_local_static = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static"))
+if os.path.exists(os.path.join(_local_static, "index.html")):
+    frontend_dist = _local_static
+else:
+    frontend_dist = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "frontend", "dist"))
+
 # NOTE: static_folder=None so Flask does NOT register its own static handler.
 # All static file serving (assets, favicon, etc.) is done in the catch_all route below,
 # which guarantees SPA routes like /invite/activate always return index.html.
