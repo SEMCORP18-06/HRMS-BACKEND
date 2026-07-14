@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv/
+venv/
+ENV/
+env/
+mock_emails.log
+*.pdf
+*.xlsx
+*.docx
+temp_payslip_*.pdf
+encrypted_payslip_*.pdf
+*.db
+*.txt
