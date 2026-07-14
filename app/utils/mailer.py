@@ -227,7 +227,7 @@ def apply_email_styles(html_body: str) -> str:
     return html_body
 
 
-def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None, inline_images: list = None):
+def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None, inline_images: list = None, server = None):
     """
     Sends an email using SMTP if credentials are configured, or logs it to mock_emails.log.
     Supports comma-separated recipients by sending separate individual transactions.
@@ -239,11 +239,14 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
     body = apply_email_styles(body)
 
     # Check if SMTP is configured
-    if SMTP_HOST and SMTP_USER and SMTP_PASSWORD:
+    if (SMTP_HOST and SMTP_USER and SMTP_PASSWORD) or server:
         try:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5)
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
+            should_close = False
+            if not server:
+                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5)
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASSWORD)
+                should_close = True
 
             for recipient in recipients:
                 # Use 'related' to embed inline image attachments correctly
@@ -295,7 +298,8 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                 server.sendmail(SENDER_EMAIL, recipient, msg.as_string())
                 safe_print(f"[MAILER] Real email sent to {recipient}: {subject}")
 
-            server.quit()
+            if should_close:
+                server.quit()
             return True
         except Exception as e:
             safe_print(f"[MAILER] Failed to send real email: {str(e)}")

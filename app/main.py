@@ -1887,10 +1887,30 @@ def handle_appreciation():
 @app.route('/api/surprise-ops/appreciation/<appreciation_id>/send', methods=['POST'])
 @login_required
 def send_appreciation(appreciation_id):
+    smtp_server = None
+    try:
+        from app.utils.mailer import SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_PORT
+        if SMTP_HOST and SMTP_USER and SMTP_PASSWORD:
+            try:
+                import smtplib
+                smtp_server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5)
+                smtp_server.starttls()
+                smtp_server.login(SMTP_USER, SMTP_PASSWORD)
+            except Exception as smtp_err:
+                print(f"[SMTP CON] Failed to pre-connect: {str(smtp_err)}")
+                smtp_server = None
+    except Exception:
+        pass
+
     try:
         tenant_id = g.current_user["tenant_id"]
         appr = db.appreciations.find_one({"_id": ObjectId(appreciation_id), "tenant_id": tenant_id})
         if not appr:
+            if smtp_server:
+                try:
+                    smtp_server.quit()
+                except Exception:
+                    pass
             return jsonify({"detail": "Appreciation record not found"}), 404
             
         email = appr["employee_email"]
@@ -2008,7 +2028,7 @@ def send_appreciation(appreciation_id):
         """
         
         # 1. Send the appreciation card to the awardee's mailboxes
-        send_email(email, subject, body, attachment_path=attachment_path, attachment_name=attachment_name, inline_images=inline_images)
+        send_email(email, subject, body, attachment_path=attachment_path, attachment_name=attachment_name, inline_images=inline_images, server=smtp_server)
             
         # 2. Dispatch announcement emails to selected employees
         announcement_recipients = appr.get("announcement_recipients") or []
@@ -2063,11 +2083,21 @@ def send_appreciation(appreciation_id):
                     broadcast_emails.append(rec_company_email)
             
             if broadcast_emails:
-                send_email(", ".join(broadcast_emails), announce_subject, announce_body, inline_images=inline_images)
+                send_email(", ".join(broadcast_emails), announce_subject, announce_body, inline_images=inline_images, server=smtp_server)
         
         db.appreciations.update_one({"_id": ObjectId(appreciation_id)}, {"$set": {"status": "SENT"}})
+        if smtp_server:
+            try:
+                smtp_server.quit()
+            except Exception:
+                pass
         return jsonify({"message": "Appreciation and announcement emails dispatched successfully!"})
     except Exception as e:
+        if smtp_server:
+            try:
+                smtp_server.quit()
+            except Exception:
+                pass
         return jsonify({"detail": str(e)}), 500
 
 @app.route('/api/surprise-ops/appreciation/<appreciation_id>', methods=['DELETE'])
