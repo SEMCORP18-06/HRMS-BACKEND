@@ -1024,8 +1024,6 @@ def send_celebration_email():
                 if str(other["_id"]) != str(emp["_id"]):
                     if other.get("email"):
                         other_emails.append(other["email"])
-                    if other.get("personal_email"):
-                        other_emails.append(other["personal_email"])
             if other_emails:
                 broadcast_subject = f"Let's Celebrate {full_name}'s Birthday! 🥳"
                 broadcast_body = f"""
@@ -1080,8 +1078,6 @@ def send_celebration_email():
                 if str(other["_id"]) != str(emp["_id"]):
                     if other.get("email"):
                         other_emails.append(other["email"])
-                    if other.get("personal_email"):
-                        other_emails.append(other["personal_email"])
             if other_emails:
                 broadcast_subject = f"Celebrating {full_name}'s {ordinal} Work Anniversary! 🚀"
                 broadcast_body = f"""
@@ -1104,8 +1100,6 @@ def send_celebration_email():
                 send_email(", ".join(other_emails), broadcast_subject, broadcast_body)
             
         emails_to_send = [emp.get("email")]
-        if emp.get("personal_email"):
-            emails_to_send.append(emp.get("personal_email"))
         to_email_str = ", ".join([email for email in emails_to_send if email])
         if to_email_str:
             send_email(to_email_str, subject, body)
@@ -1969,8 +1963,6 @@ def send_appreciation(appreciation_id):
         
         # 1. Send the appreciation card to the awardee's mailboxes
         send_email(email, subject, body, attachment_path=attachment_path, attachment_name=attachment_name)
-        if personal_email:
-            send_email(personal_email, subject, body, attachment_path=attachment_path, attachment_name=attachment_name)
             
         # 2. Dispatch announcement emails to selected employees
         announcement_recipients = appr.get("announcement_recipients") or []
@@ -2010,12 +2002,8 @@ def send_appreciation(appreciation_id):
             
             for rec in recipients:
                 rec_company_email = rec.get("email")
-                rec_personal_email = rec.get("personal_email")
-                
                 if rec_company_email:
                     send_email(rec_company_email, announce_subject, announce_body)
-                if rec_personal_email:
-                    send_email(rec_personal_email, announce_subject, announce_body)
         
         db.appreciations.update_one({"_id": ObjectId(appreciation_id)}, {"$set": {"status": "SENT"}})
         return jsonify({"message": "Appreciation and announcement emails dispatched successfully!"})
