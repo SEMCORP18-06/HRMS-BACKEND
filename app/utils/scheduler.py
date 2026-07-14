@@ -40,14 +40,72 @@ def ensure_daily_pulse_schedule(year, month):
         quotes = list(db.quotes.find({}))
         if not quotes:
             # Seed default quotes if library is empty
-            quotes = [
+            default_quotes = [
                 {"text": "The only way to do great work is to love what you do.", "author": "Steve Jobs"},
                 {"text": "Success is not final, failure is not fatal: it is the courage to continue that counts.", "author": "Winston Churchill"},
                 {"text": "Believe you can and you're halfway there.", "author": "Theodore Roosevelt"},
-                {"text": "Act as if what you do makes a difference. It does.", "author": "William James"}
+                {"text": "Act as if what you do makes a difference. It does.", "author": "William James"},
+                {"text": "It is during our darkest moments that we must focus to see the light.", "author": "Aristotle Onassis"},
+                {"text": "Do not go where the path may lead, go instead where there is no path and leave a trail.", "author": "Ralph Waldo Emerson"},
+                {"text": "In the end, it's not the years in your life that count. It's the life in your years.", "author": "Abraham Lincoln"},
+                {"text": "Never let the fear of striking out keep you from playing the game.", "author": "Babe Ruth"},
+                {"text": "Keep smiling, because life is a beautiful thing and there's so much to smile about.", "author": "Marilyn Monroe"},
+                {"text": "The greatest glory in living lies not in never falling, but in rising every time we fall.", "author": "Nelson Mandela"},
+                {"text": "The way to get started is to quit talking and begin doing.", "author": "Walt Disney"},
+                {"text": "Your time is limited, so don't waste it living someone else's life.", "author": "Steve Jobs"},
+                {"text": "If life were predictable it would cease to be life, and be without flavor.", "author": "Eleanor Roosevelt"},
+                {"text": "If you look at what you have in life, you'll always have more.", "author": "Oprah Winfrey"},
+                {"text": "If you set your goals ridiculously high and it's a failure, you will fail above everyone else's success.", "author": "James Cameron"},
+                {"text": "Life is what happens when you're busy making other plans.", "author": "John Lennon"},
+                {"text": "Spread love everywhere you go. Let no one ever come to you without leaving happier.", "author": "Mother Teresa"},
+                {"text": "When you reach the end of your rope, tie a knot in it and hang on.", "author": "Franklin D. Roosevelt"},
+                {"text": "Always remember that you are absolutely unique. Just like everyone else.", "author": "Margaret Mead"},
+                {"text": "Don't judge each day by the harvest you reap but by the seeds that you plant.", "author": "Robert Louis Stevenson"},
+                {"text": "The future belongs to those who believe in the beauty of their dreams.", "author": "Eleanor Roosevelt"},
+                {"text": "Tell me and I forget. Teach me and I remember. Involve me and I learn.", "author": "Benjamin Franklin"},
+                {"text": "The best and most beautiful things in the world cannot be seen or even touched - they must be felt with the heart.", "author": "Helen Keller"},
+                {"text": "It is method, not raw talent, that yields success.", "author": "Unknown"},
+                {"text": "You miss 100% of the shots you don't take.", "author": "Wayne Gretzky"},
+                {"text": "I have learned over the years that when one's mind is made up, this diminishes fear.", "author": "Rosa Parks"},
+                {"text": "I alone cannot change the world, but I can cast a stone across the waters to create many ripples.", "author": "Mother Teresa"},
+                {"text": "Nothing is impossible, the word itself says, 'I'm possible!'", "author": "Audrey Hepburn"},
+                {"text": "The question isn't who is going to let me; it's who is going to stop me.", "author": "Ayn Rand"},
+                {"text": "The only person you are destined to become is the person you decide to be.", "author": "Ralph Waldo Emerson"},
+                {"text": "We can easily forgive a child who is afraid of the dark; the real tragedy of life is when men are afraid of the light.", "author": "Plato"},
+                {"text": "Difficulties strengthen the mind, as labor does the body.", "author": "Seneca"},
+                {"text": "If you want to live a happy life, tie it to a goal, not to people or things.", "author": "Albert Einstein"},
+                {"text": "The start is the most important part of the work.", "author": "Plato"},
+                {"text": "Quality is not an act, it is a habit.", "author": "Aristotle"},
+                {"text": "Well begun is half done.", "author": "Aristotle"},
+                {"text": "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", "author": "Aristotle"},
+                {"text": "Be kind, for everyone you meet is fighting a harder battle.", "author": "Plato"},
+                {"text": "Small opportunities are often the beginning of great enterprises.", "author": "Demosthenes"},
+                {"text": "The mind is not a vessel to be filled, but a fire to be kindled.", "author": "Plutarch"},
+                {"text": "Perseverance is the hard work you do after you get tired of doing the hard work you already did.", "author": "Newt Gingrich"},
+                {"text": "Opportunities multiply as they are seized.", "author": "Sun Tzu"},
+                {"text": "Knowing yourself is the beginning of all wisdom.", "author": "Aristotle"},
+                {"text": "It does not matter how slowly you go as long as you do not stop.", "author": "Confucius"},
+                {"text": "Our greatest glory is not in never falling, but in rising every time we fall.", "author": "Confucius"},
+                {"text": "He who overcomes himself is the mightiest warrior.", "author": "Lao Tzu"},
+                {"text": "The journey of a thousand miles begins with one step.", "author": "Lao Tzu"},
+                {"text": "Care about what other people think and you will always be their prisoner.", "author": "Lao Tzu"},
+                {"text": "Silence is a source of great strength.", "author": "Lao Tzu"},
+                {"text": "There is no road to path, path is made by walking.", "author": "Antonio Machado"}
             ]
+            db.quotes.insert_many(default_quotes)
+            quotes = list(db.quotes.find({}))
             
-        selected_quotes = random.sample(quotes, 3) if len(quotes) >= 3 else (quotes * 3)[:3]
+        # Avoid quote reuse: find all quote texts scheduled or delivered so far
+        used_quote_texts = {s["quote"] for s in db.daily_pulse_schedule.find({"tenant_id": tenant_id}, {"quote": 1})}
+        
+        # Filter available quotes to get unused ones
+        unused_quotes = [q for q in quotes if q.get("text") not in used_quote_texts]
+        
+        # Fallback to all quotes if we ran out of unused ones
+        if len(unused_quotes) < 3:
+            unused_quotes = quotes
+            
+        selected_quotes = random.sample(unused_quotes, 3) if len(unused_quotes) >= 3 else (unused_quotes * 3)[:3]
         
         for i, idx in enumerate(selected_indices):
             target_date = business_days[idx]
