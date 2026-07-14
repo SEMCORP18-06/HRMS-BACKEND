@@ -227,7 +227,7 @@ def apply_email_styles(html_body: str) -> str:
     return html_body
 
 
-def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None):
+def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None, inline_images: list = None):
     """
     Sends an email using SMTP if credentials are configured, or logs it to mock_emails.log.
     Supports comma-separated recipients by sending separate individual transactions.
@@ -270,6 +270,17 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                         msg.attach(msg_logo)
                     except Exception as e:
                         safe_print(f"[MAILER] Error attaching inline logo: {str(e)}")
+
+                # Attach other inline images if any
+                if inline_images:
+                    for img in inline_images:
+                        try:
+                            msg_img = MIMEImage(img["data"])
+                            msg_img.add_header('Content-ID', f"<{img['content_id']}>")
+                            msg_img.add_header('Content-Disposition', 'inline', filename=img.get('filename', 'image.png'))
+                            msg.attach(msg_img)
+                        except Exception as img_err:
+                            safe_print(f"[MAILER] Error attaching inline image: {str(img_err)}")
 
                 # Attach standard document attachments if any
                 if attachment_path and os.path.exists(attachment_path):

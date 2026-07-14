@@ -1904,6 +1904,7 @@ def send_appreciation(appreciation_id):
         personal_email = awardee.get("personal_email") if awardee else None
         
         photo_html = ""
+        inline_images = None
         if a_type == 'MONTH' and awardee:
             photo_url = None
             doc_vault = db.employee_documents.find_one({"employee_id": awardee["_id"]})
@@ -1917,7 +1918,22 @@ def send_appreciation(appreciation_id):
                     base_url = base_url.replace("http://", "https://")
                 photo_url = f"{base_url}{photo_url}"
             
-            if not photo_url:
+            image_data = None
+            subtype = 'png'
+            if photo_url and photo_url.startswith('data:image/'):
+                try:
+                    header, encoded = photo_url.split(',', 1)
+                    if 'base64' in header:
+                        image_data = base64.b64decode(encoded)
+                        if 'jpeg' in header or 'jpg' in header:
+                            subtype = 'jpeg'
+                except Exception:
+                    pass
+            
+            if image_data:
+                photo_url = "cid:profile_photo"
+                inline_images = [{"content_id": "profile_photo", "data": image_data, "filename": f"profile.{subtype}"}]
+            elif not photo_url or not photo_url.startswith('http'):
                 import urllib.parse
                 encoded_name = urllib.parse.quote_plus(name)
                 photo_url = f"https://ui-avatars.com/api/?name={encoded_name}&background=8b5cf6&color=fff&size=200&rounded=true"
@@ -1991,7 +2007,7 @@ def send_appreciation(appreciation_id):
         """
         
         # 1. Send the appreciation card to the awardee's mailboxes
-        send_email(email, subject, body, attachment_path=attachment_path, attachment_name=attachment_name)
+        send_email(email, subject, body, attachment_path=attachment_path, attachment_name=attachment_name, inline_images=inline_images)
             
         # 2. Dispatch announcement emails to selected employees
         announcement_recipients = appr.get("announcement_recipients") or []
@@ -2042,7 +2058,7 @@ def send_appreciation(appreciation_id):
             for rec in recipients:
                 rec_company_email = rec.get("email")
                 if rec_company_email:
-                    send_email(rec_company_email, announce_subject, announce_body)
+                    send_email(rec_company_email, announce_subject, announce_body, inline_images=inline_images)
         
         db.appreciations.update_one({"_id": ObjectId(appreciation_id)}, {"$set": {"status": "SENT"}})
         return jsonify({"message": "Appreciation and announcement emails dispatched successfully!"})
