@@ -14,3 +14,4 @@ temp_payslip_*.pdf
 encrypted_payslip_*.pdf
 *.db
 *.txt
+!requirements.txt
