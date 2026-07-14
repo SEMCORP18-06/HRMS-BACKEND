@@ -850,7 +850,7 @@ def handle_single_employee(emp_id):
                     if to_email:
                         scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
                         host = request.headers.get("Host", "localhost:8000")
-                        portal_link = f"{scheme}://{host}/"
+                        portal_link = f"{scheme}://{host}/?signup=true"
                         subject = "Portal Access Granted via Personal Email"
                         body = f"""
                         <html>
