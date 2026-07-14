@@ -105,6 +105,7 @@ def sso_login():
     data = request.json or {}
     email = data.get('email')
     password = data.get('password')
+    role_pref = data.get('role')
     
     if not email or not password:
         return jsonify({"detail": "Email and password are required"}), 400
@@ -131,11 +132,19 @@ def sso_login():
             return jsonify({"detail": "Invalid email or password."}), 401
             
         employee = None
-        # Match the password (prioritizing Admin role if passwords are identical)
-        for emp in employees:
-            if emp.get("password") == password and emp.get("role") == "Admin (HR)":
-                employee = emp
-                break
+        # Match using preferred role if specified
+        if role_pref:
+            for emp in employees:
+                if emp.get("password") == password and emp.get("role") == role_pref:
+                    employee = emp
+                    break
+                    
+        # Fallback if no specific role matched or preferred
+        if not employee:
+            for emp in employees:
+                if emp.get("password") == password and emp.get("role") == "Admin (HR)":
+                    employee = emp
+                    break
         if not employee:
             for emp in employees:
                 if emp.get("password") == password:
@@ -208,14 +217,26 @@ def sso_signup():
         admin_exists = db.employees.count_documents({"role": "Admin (HR)"}) > 0
         
         if admin_exists:
-            existing = db.employees.find_one({"$or": [{"email": email}, {"personal_email": email}]})
+            # Look for an unactivated profile (which has no password set yet) matching the email
+            existing = db.employees.find_one({
+                "$or": [{"email": email}, {"personal_email": email}],
+                "$or": [
+                    {"password": {"$exists": False}},
+                    {"password": None},
+                    {"password": ""}
+                ]
+            })
             if not existing:
+                # If no unactivated profile exists, check if it's already registered
+                already_registered = db.employees.find_one({
+                    "$or": [{"email": email}, {"personal_email": email}],
+                    "password": {"$ne": ""}
+                })
+                if already_registered:
+                    return jsonify({"detail": "Account with this email already exists."}), 400
                 return jsonify({"detail": "Your company email has not been provisioned by HR yet. Please contact your HR administrator."}), 400
-            if existing.get("password") and existing.get("password") != "":
-                return jsonify({"detail": "Account with this email already exists."}), 400
 
             # Only update password; preserve all onboarding fields (name, role, dob, doj, department, etc.)
-            # The employee's profile was already populated via the onboarding form, so we must NOT overwrite it.
             update_fields = {"password": password, "status": "ACTIVE"}
             if not existing.get("email") or existing.get("email") == "":
                 update_fields["email"] = email
