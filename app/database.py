@@ -60,7 +60,7 @@ def seed_db():
             "email": "john@semcogroups.com",
             "password": "password123",
             "designation": "HR Operations Manager",
-            "role": "HR Operations Manager",
+            "role": "Admin (HR)",
             "department": "People Ops",
             "dob": "1990-01-01",
             "doj": today,
