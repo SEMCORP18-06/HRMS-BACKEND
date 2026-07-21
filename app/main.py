@@ -3892,13 +3892,30 @@ def permit_all_late_attendance():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+def format_time_str_to_ist(val):
+    if not isinstance(val, str):
+        return val
+    try:
+        dt = datetime.datetime.strptime(val, '%I:%M %p')
+        if val.endswith('AM') and dt.hour in [3, 4, 5]:
+            dt_ist = dt + datetime.timedelta(hours=5, minutes=30)
+            return dt_ist.strftime('%I:%M %p')
+    except Exception:
+        pass
+    return val
+
+def format_selections_to_ist(selections):
+    if not isinstance(selections, dict):
+        return selections
+    return {k: format_time_str_to_ist(v) for k, v in selections.items()}
+
 @app.route('/api/attendance/my-month', methods=['GET'])
 @login_required
 def get_my_month_attendance():
     try:
         user_id = g.current_user["employee_id"]
-        year = request.args.get("year", datetime.date.today().year)
-        month = request.args.get("month", f"{datetime.date.today().month:02d}")
+        year = request.args.get("year", get_ist_now().year)
+        month = request.args.get("month", f"{get_ist_now().month:02d}")
         
         month_prefix = f"{year}-{month}"
         
@@ -3911,7 +3928,7 @@ def get_my_month_attendance():
         for r in records:
             records_list.append({
                 "date": r["date"],
-                "selections": r.get("selections", {})
+                "selections": format_selections_to_ist(r.get("selections", {}))
             })
             
         return jsonify({
@@ -3927,8 +3944,8 @@ def get_admin_month_attendance():
         if g.current_user["role"] != "Admin (HR)":
             return jsonify({"detail": "Admin access required"}), 403
             
-        year = request.args.get("year", datetime.date.today().year)
-        month = request.args.get("month", f"{datetime.date.today().month:02d}")
+        year = request.args.get("year", get_ist_now().year)
+        month = request.args.get("month", f"{get_ist_now().month:02d}")
         
         month_prefix = f"{year}-{month}" # YYYY-MM
         
@@ -3946,7 +3963,7 @@ def get_admin_month_attendance():
                 "employee_id": emp_id_str,
                 "employee_name": emp_map.get(emp_id_str, "Unknown Employee"),
                 "date": r["date"],
-                "selections": r.get("selections", {})
+                "selections": format_selections_to_ist(r.get("selections", {}))
             })
             
         return jsonify({
