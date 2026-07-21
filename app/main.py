@@ -3828,7 +3828,8 @@ def mark_attendance():
         
         if not is_in_window:
             emp = db.employees.find_one({"_id": ObjectId(user_id)})
-            if not emp or not emp.get("allow_late_attendance_marking"):
+            is_admin = g.current_user.get("role") == "Admin (HR)"
+            if not is_admin and (not emp or not emp.get("allow_late_attendance_marking")):
                 return jsonify({"detail": "Attendance portal is locked. Attendance can only be marked between 10:00 AM and 10:30 AM, unless authorized by an HR Admin."}), 403
             
         today_str = datetime.date.today().isoformat()
@@ -3840,10 +3841,11 @@ def mark_attendance():
         if record:
             selections = record.get("selections", {})
             if selection in selections:
-                return jsonify({"detail": f"Selection '{selection}' is already locked for today."}), 400
-                
-            # Lock-in rule: selections cannot be removed/deselected. We only add new checked items!
-            selections[selection] = time_str
+                # Toggle off selection if clicked again
+                del selections[selection]
+            else:
+                selections[selection] = time_str
+
             db.attendance.update_one(
                 {"_id": record["_id"]},
                 {"$set": {"selections": selections}}
@@ -3856,8 +3858,8 @@ def mark_attendance():
                 "selections": selections
             })
             
-        # Clear the late permit flag once successfully marked
-        if not is_in_window:
+        # Clear the late permit flag once successfully marked (if not admin)
+        if not is_in_window and g.current_user.get("role") != "Admin (HR)":
             db.employees.update_one({"_id": ObjectId(user_id)}, {"$set": {"allow_late_attendance_marking": False}})
             
         return jsonify({"date": today_str, "selections": list(selections.keys())})
@@ -3880,6 +3882,21 @@ def permit_late_attendance(employee_id):
             {"$set": {"allow_late_attendance_marking": True}}
         )
         return jsonify({"message": f"Late attendance marking has been permitted for {emp['name']}."})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/attendance/permit-all', methods=['POST'])
+@login_required
+def permit_all_late_attendance():
+    try:
+        if g.current_user["role"] != "Admin (HR)":
+            return jsonify({"detail": "Admin access required"}), 403
+            
+        db.employees.update_many(
+            {"tenant_id": "semco"},
+            {"$set": {"allow_late_attendance_marking": True}}
+        )
+        return jsonify({"message": "Late attendance marking permitted for all active employees."})
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
@@ -4319,6 +4336,38 @@ def lock_attendance_month():
             
         return jsonify({
             "message": f"Attendance locked successfully and synced to Payroll Engine for {synced_count} active employees!"
+        })
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/attendance/unlock', methods=['POST'])
+@login_required
+def unlock_attendance_month():
+    try:
+        if g.current_user["role"] != "Admin (HR)":
+            return jsonify({"detail": "Admin access required"}), 403
+            
+        data = request.json or {}
+        year = int(data.get("year", datetime.date.today().year))
+        month = data.get("month", f"{datetime.date.today().month:02d}")
+        
+        db.attendance_locks.update_one(
+            {
+                "year": year,
+                "month": month
+            },
+            {
+                "$set": {
+                    "locked": False,
+                    "unlocked_at": datetime.datetime.utcnow().isoformat(),
+                    "unlocked_by": ObjectId(g.current_user["employee_id"])
+                }
+            },
+            upsert=True
+        )
+        
+        return jsonify({
+            "message": "Month attendance successfully unlocked! Attendance edits and submissions are now re-enabled."
         })
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
