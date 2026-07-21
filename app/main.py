@@ -2225,7 +2225,10 @@ def handle_elibrary():
             safe_name = secure_filename(file.filename)
             unique_name = f"{uuid_lib.uuid4().hex}_{safe_name}"
             filepath = os.path.join(ELIBRARY_UPLOAD_DIR, unique_name)
+            
+            b64_uri = convert_file_to_base64_uri(file, ['.pdf', '.xlsx', '.docx'])
             file.save(filepath)
+            
             title = request.form.get('title') or safe_name
             description = request.form.get('description', '')
             doc = {
@@ -2235,6 +2238,7 @@ def handle_elibrary():
                 "filename": unique_name,
                 "original_name": file.filename,
                 "ext": ext,
+                "file_data": b64_uri,
                 "uploaded_by": g.current_user.get("name", "Admin"),
                 "uploaded_at": datetime.datetime.utcnow().isoformat()
             }
@@ -2248,12 +2252,40 @@ def handle_elibrary():
                 "id": str(d["_id"]),
                 "title": d.get("title", d.get("original_name", "")),
                 "description": d.get("description", ""),
-                "filename": d["filename"],
+                "filename": d.get("filename", ""),
                 "original_name": d.get("original_name", ""),
                 "ext": d.get("ext", ""),
+                "file_data": d.get("file_data", ""),
                 "uploaded_by": d.get("uploaded_by", ""),
                 "uploaded_at": d.get("uploaded_at", "")
             } for d in docs])
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/elibrary/file/<file_id>', methods=['GET'])
+def serve_elibrary_file_by_id(file_id):
+    try:
+        doc = db.elibrary.find_one({"_id": ObjectId(file_id)})
+        if not doc:
+            return jsonify({"detail": "File not found"}), 404
+            
+        b64_data = doc.get("file_data")
+        if b64_data and "," in b64_data:
+            header, encoded = b64_data.split(",", 1)
+            mime = header.split(";")[0].replace("data:", "")
+            file_bytes = base64.b64decode(encoded)
+            return send_file(
+                io.BytesIO(file_bytes),
+                mimetype=mime,
+                as_attachment=False,
+                download_name=doc.get("original_name", "document.pdf")
+            )
+            
+        filename = doc.get("filename")
+        if filename and os.path.exists(os.path.join(ELIBRARY_UPLOAD_DIR, filename)):
+            return send_from_directory(ELIBRARY_UPLOAD_DIR, filename)
+            
+        return jsonify({"detail": "File content not available"}), 404
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
@@ -2268,8 +2300,8 @@ def delete_elibrary_file(file_id):
         doc = db.elibrary.find_one({"_id": ObjectId(file_id), "tenant_id": tenant_id})
         if not doc:
             return jsonify({"detail": "File not found."}), 404
-        filepath = os.path.join(ELIBRARY_UPLOAD_DIR, doc["filename"])
-        if os.path.exists(filepath):
+        filepath = os.path.join(ELIBRARY_UPLOAD_DIR, doc.get("filename", ""))
+        if filepath and os.path.exists(filepath):
             os.remove(filepath)
         db.elibrary.delete_one({"_id": ObjectId(file_id)})
         return jsonify({"message": "File deleted successfully."})
@@ -2277,9 +2309,10 @@ def delete_elibrary_file(file_id):
         return jsonify({"detail": str(e)}), 500
 
 @app.route('/static/uploads/elibrary/<path:filename>')
-@login_required
 def serve_elibrary_file(filename):
-    return send_from_directory(ELIBRARY_UPLOAD_DIR, filename)
+    if os.path.exists(os.path.join(ELIBRARY_UPLOAD_DIR, filename)):
+        return send_from_directory(ELIBRARY_UPLOAD_DIR, filename)
+    return jsonify({"detail": "File not found"}), 404
 
 # --- E-Library External Links & Courses ---
 @app.route('/api/elibrary/links', methods=['GET', 'POST'])
