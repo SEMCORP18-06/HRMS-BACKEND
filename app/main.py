@@ -3769,6 +3769,9 @@ def handle_interviews():
         return jsonify({"detail": str(e)}), 500
 
 # --- Attendance Endpoints ---
+def get_ist_now():
+    return datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+
 @app.route('/api/auth/signup-status', methods=['GET'])
 def get_signup_status():
     try:
@@ -3782,7 +3785,7 @@ def get_signup_status():
 def get_today_attendance():
     try:
         user_id = g.current_user["employee_id"]
-        today_str = datetime.date.today().isoformat()
+        today_str = get_ist_now().date().isoformat()
         
         record = db.attendance.find_one({"employee_id": ObjectId(user_id), "date": today_str})
         if not record:
@@ -3798,10 +3801,14 @@ def get_today_attendance():
 def mark_attendance():
     try:
         user_id = g.current_user["employee_id"]
+        ist_now = get_ist_now()
+        today_date = ist_now.date()
+        today_str = today_date.isoformat()
+        year = today_date.year
+        month_str = f"{today_date.month:02d}"
         
         # Enforce lock status check
-        today_date = datetime.date.today()
-        lock_record = db.attendance_locks.find_one({"year": today_date.year, "month": f"{today_date.month:02d}"})
+        lock_record = db.attendance_locks.find_one({"year": year, "month": month_str})
         if lock_record and lock_record.get("locked"):
             return jsonify({"detail": "This month's attendance has been locked and finalized by HR. No further selections can be submitted."}), 403
 
@@ -3822,18 +3829,7 @@ def mark_attendance():
         if selection not in valid_selections:
             return jsonify({"detail": "Invalid status selection"}), 400
             
-        now = datetime.datetime.now()
-        current_time_str = now.strftime("%H:%M")
-        is_in_window = ("10:00" <= current_time_str <= "10:30")
-        
-        if not is_in_window:
-            emp = db.employees.find_one({"_id": ObjectId(user_id)})
-            is_admin = g.current_user.get("role") == "Admin (HR)"
-            if not is_admin and (not emp or not emp.get("allow_late_attendance_marking")):
-                return jsonify({"detail": "Attendance portal is locked. Attendance can only be marked between 10:00 AM and 10:30 AM, unless authorized by an HR Admin."}), 403
-            
-        today_str = datetime.date.today().isoformat()
-        time_str = now.strftime("%I:%M %p") # Time-wise AM/PM format
+        time_str = ist_now.strftime("%I:%M %p") # Time-wise AM/PM format in IST
         
         # Check if record exists for today
         record = db.attendance.find_one({"employee_id": ObjectId(user_id), "date": today_str})
@@ -3857,10 +3853,6 @@ def mark_attendance():
                 "date": today_str,
                 "selections": selections
             })
-            
-        # Clear the late permit flag once successfully marked (if not admin)
-        if not is_in_window and g.current_user.get("role") != "Admin (HR)":
-            db.employees.update_one({"_id": ObjectId(user_id)}, {"$set": {"allow_late_attendance_marking": False}})
             
         return jsonify({"date": today_str, "selections": list(selections.keys())})
     except Exception as e:
