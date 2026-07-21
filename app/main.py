@@ -3837,11 +3837,9 @@ def mark_attendance():
         if record:
             selections = record.get("selections", {})
             if selection in selections:
-                # Toggle off selection if clicked again
-                del selections[selection]
-            else:
-                selections[selection] = time_str
-
+                return jsonify({"detail": f"Selection '{selection}' is already locked for today and cannot be deselected."}), 400
+                
+            selections[selection] = time_str
             db.attendance.update_one(
                 {"_id": record["_id"]},
                 {"$set": {"selections": selections}}
