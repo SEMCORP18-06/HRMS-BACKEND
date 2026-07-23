@@ -2,6 +2,8 @@ import os
 import csv
 import datetime
 import io
+import random
+import string
 from flask import Flask, request, jsonify, g, send_from_directory, send_file
 from flask_cors import CORS
 import jwt
@@ -47,6 +49,7 @@ def convert_file_to_base64_uri(file, allowed_ext=None):
     ext = os.path.splitext(fname)[1]
     if allowed_ext and ext not in allowed_ext:
         return None
+    file.seek(0)
     file_bytes = file.read()
     file.seek(0)
     
@@ -67,6 +70,10 @@ def convert_file_to_base64_uri(file, allowed_ext=None):
         mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     elif ext == ".xlsx":
         mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif ext == ".txt":
+        mime_type = "text/plain"
+    elif ext == ".md":
+        mime_type = "text/markdown"
         
     base64_data = base64.b64encode(file_bytes).decode('utf-8')
     return f"data:{mime_type};base64,{base64_data}"
@@ -90,6 +97,11 @@ def handle_cors_headers(response):
     return response
 
 SECRET_KEY = "hr-ops-secret-key-12345"
+OTP_EXPIRY_MINUTES = 10
+
+def generate_otp(length=6):
+    """Generate a random numeric OTP of the given length."""
+    return ''.join(random.choices(string.digits, k=length))
 
 # --- JWT Helpers ---
 def create_access_token(data: dict):
@@ -232,6 +244,196 @@ def sso_login():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+# --- Email Verification OTP Endpoints ---
+
+@app.route('/api/auth/send-verification-otp', methods=['POST'])
+def send_verification_otp():
+    """Step 1 of signup: Send a 6-digit OTP to the user's email for verification."""
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    
+    if not email:
+        return jsonify({"detail": "Email is required"}), 400
+    
+    try:
+        # Domain check: only semcogroups.com or approved personal emails
+        email_domain = email.split('@')[-1] if '@' in email else ''
+        if email_domain.lower() != "semcogroups.com":
+            allowed_emp = db.employees.find_one({
+                "personal_email": email,
+                "allow_personal_email_access": True,
+                "tenant_id": "semco"
+            })
+            if not allowed_emp:
+                return jsonify({"detail": "Only semcogroups.com domain accounts are permitted."}), 400
+        
+        # Check if email is already registered with a password
+        already_registered = db.employees.find_one({
+            "$or": [{"email": email}, {"personal_email": email}],
+            "password": {"$nin": [None, ""]}
+        })
+        if already_registered:
+            return jsonify({"detail": "An account with this email already exists. Please sign in instead."}), 400
+        
+        # Generate OTP and store it
+        otp = generate_otp()
+        db.verification_otps.delete_many({"email": email})  # Remove any previous OTPs
+        db.verification_otps.insert_one({
+            "email": email,
+            "otp": otp,
+            "created_at": datetime.datetime.utcnow(),
+            "expires_at": datetime.datetime.utcnow() + datetime.timedelta(minutes=OTP_EXPIRY_MINUTES),
+            "verified": False
+        })
+        
+        # Send OTP via email
+        subject = "SEMCO HR Portal — Email Verification Code"
+        body = f"""
+        <html><body>
+        <h2 style="margin-bottom:8px;">Email Verification</h2>
+        <p>Your verification code for SEMCO HR Operations Portal is:</p>
+        <div style="text-align:center; margin:24px 0;">
+          <span style="font-size:32px; font-weight:800; letter-spacing:8px; background:linear-gradient(135deg,#15803d,#1d4ed8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; padding:16px 32px; border:2px dashed #1d4ed8; border-radius:12px; display:inline-block;">{otp}</span>
+        </div>
+        <p style="color:#64748b; font-size:13px;">This code expires in {OTP_EXPIRY_MINUTES} minutes. Do not share it with anyone.</p>
+        </body></html>
+        """
+        send_email(email, subject, body)
+        
+        return jsonify({"message": "Verification code sent to your email.", "email": email})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
+@app.route('/api/auth/verify-otp', methods=['POST'])
+def verify_otp():
+    """Step 2 of signup: Verify the OTP entered by the user."""
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    otp = (data.get('otp') or '').strip()
+    
+    if not email or not otp:
+        return jsonify({"detail": "Email and OTP are required"}), 400
+    
+    try:
+        record = db.verification_otps.find_one({"email": email})
+        if not record:
+            return jsonify({"detail": "No verification code found. Please request a new one."}), 400
+        
+        # Check expiry
+        if datetime.datetime.utcnow() > record["expires_at"]:
+            db.verification_otps.delete_many({"email": email})
+            return jsonify({"detail": "Verification code has expired. Please request a new one."}), 400
+        
+        if record["otp"] != otp:
+            return jsonify({"detail": "Invalid verification code. Please try again."}), 400
+        
+        # Mark as verified
+        db.verification_otps.update_one(
+            {"_id": record["_id"]},
+            {"$set": {"verified": True, "verified_at": datetime.datetime.utcnow()}}
+        )
+        
+        return jsonify({"message": "Email verified successfully.", "verified": True})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
+# --- Forgot / Reset Password Endpoints ---
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    """Send a password reset OTP to the user's registered email."""
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    
+    if not email:
+        return jsonify({"detail": "Email is required"}), 400
+    
+    try:
+        # Check if account exists
+        employee = db.employees.find_one({
+            "$or": [{"email": email}, {"personal_email": email}],
+            "password": {"$nin": [None, ""]}
+        })
+        if not employee:
+            # Don't reveal whether email exists — always return success
+            return jsonify({"message": "If an account with this email exists, a reset code has been sent."})
+        
+        # Generate OTP and store it
+        otp = generate_otp()
+        db.password_reset_otps.delete_many({"email": email})
+        db.password_reset_otps.insert_one({
+            "email": email,
+            "otp": otp,
+            "created_at": datetime.datetime.utcnow(),
+            "expires_at": datetime.datetime.utcnow() + datetime.timedelta(minutes=OTP_EXPIRY_MINUTES)
+        })
+        
+        # Send OTP email
+        emp_name = employee.get("name", "User")
+        subject = "SEMCO HR Portal — Password Reset Code"
+        body = f"""
+        <html><body>
+        <h2 style="margin-bottom:8px;">Password Reset</h2>
+        <p>Hi {emp_name},</p>
+        <p>We received a request to reset your password for the SEMCO HR Operations Portal. Your reset code is:</p>
+        <div style="text-align:center; margin:24px 0;">
+          <span style="font-size:32px; font-weight:800; letter-spacing:8px; background:linear-gradient(135deg,#dc2626,#f59e0b); -webkit-background-clip:text; -webkit-text-fill-color:transparent; padding:16px 32px; border:2px dashed #dc2626; border-radius:12px; display:inline-block;">{otp}</span>
+        </div>
+        <p style="color:#64748b; font-size:13px;">This code expires in {OTP_EXPIRY_MINUTES} minutes. If you did not request this, please ignore this email.</p>
+        </body></html>
+        """
+        send_email(email, subject, body)
+        
+        return jsonify({"message": "If an account with this email exists, a reset code has been sent."})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password():
+    """Validate OTP and reset the user's password."""
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    otp = (data.get('otp') or '').strip()
+    new_password = data.get('new_password', '')
+    
+    if not email or not otp or not new_password:
+        return jsonify({"detail": "Email, OTP, and new password are required"}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({"detail": "Password must be at least 6 characters long"}), 400
+    
+    try:
+        record = db.password_reset_otps.find_one({"email": email})
+        if not record:
+            return jsonify({"detail": "No reset code found. Please request a new one."}), 400
+        
+        if datetime.datetime.utcnow() > record["expires_at"]:
+            db.password_reset_otps.delete_many({"email": email})
+            return jsonify({"detail": "Reset code has expired. Please request a new one."}), 400
+        
+        if record["otp"] != otp:
+            return jsonify({"detail": "Invalid reset code. Please try again."}), 400
+        
+        # Update password
+        result = db.employees.update_one(
+            {"$or": [{"email": email}, {"personal_email": email}]},
+            {"$set": {"password": new_password}}
+        )
+        
+        if result.modified_count == 0:
+            return jsonify({"detail": "Account not found."}), 404
+        
+        # Clean up
+        db.password_reset_otps.delete_many({"email": email})
+        
+        return jsonify({"message": "Password has been reset successfully. You can now sign in with your new password."})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
 @app.route('/api/auth/signup', methods=['POST'])
 def sso_signup():
     data = request.json or {}
@@ -242,9 +444,22 @@ def sso_signup():
     department = data.get('department', 'General')
     birthday = data.get('birthday')
     anniversary = data.get('anniversary')
+    email_verified = data.get('email_verified', False)
     
     if not name or not email or not password:
         return jsonify({"detail": "Name, email, and password are required"}), 400
+    
+    # Verify that email was verified via OTP
+    email_lower = email.strip().lower()
+    otp_record = db.verification_otps.find_one({"email": email_lower, "verified": True})
+    if not otp_record and email_verified:
+        # Allow if the flag is set (backwards compatibility) but still check
+        pass
+    elif not otp_record:
+        return jsonify({"detail": "Email has not been verified. Please complete email verification first."}), 400
+    
+    # Clean up the OTP record after successful check
+    db.verification_otps.delete_many({"email": email_lower})
         
     try:
         email_domain = email.split('@')[-1] if '@' in email else ''
@@ -3657,36 +3872,67 @@ def handle_policies():
     try:
         tenant_id = g.current_user["tenant_id"]
         if request.method == 'POST':
-            category = request.form.get('category')
-            title = request.form.get('title')
-            content = request.form.get('content') or ''
+            if request.is_json:
+                data = request.get_json() or {}
+                category = (data.get('category') or '').strip()
+                title = (data.get('title') or '').strip()
+                content = (data.get('content') or '').strip()
+            else:
+                category = (request.form.get('category') or '').strip()
+                title = (request.form.get('title') or '').strip()
+                content = (request.form.get('content') or '').strip()
             
             if not title or not category:
-                return jsonify({"detail": "category and title are required"}), 400
+                return jsonify({"detail": "Category and Title are required to publish an SOP."}), 400
                 
             file_url = None
             file_name = None
             if 'file' in request.files:
                 file = request.files['file']
                 if file and file.filename != '':
-                    from werkzeug.utils import secure_filename
-                    import os
-                    import uuid
-                    filename = secure_filename(file.filename)
-                    upload_dir = get_upload_dir('policies')
-                    unique_filename = f"{uuid.uuid4().hex}_{filename}"
-                    filepath = os.path.join(upload_dir, unique_filename)
-                    file.save(filepath)
-                    file_url = f"/static/uploads/policies/{unique_filename}"
+                    filename = file.filename
+                    ext = os.path.splitext(filename)[1].lower()
+
+                    # Read file bytes for extraction & base64 encoding
+                    file_bytes = file.read()
+                    file.seek(0)
+
+                    # If text content is empty, extract text from uploaded document
+                    if not content or len(content.strip()) == 0:
+                        try:
+                            if ext in ['.txt', '.md']:
+                                content = file_bytes.decode('utf-8', errors='ignore')
+                            elif ext == '.pdf':
+                                try:
+                                    import io
+                                    from pypdf import PdfReader
+                                    reader = PdfReader(io.BytesIO(file_bytes))
+                                    pages_text = [page.extract_text() for page in reader.pages if page.extract_text()]
+                                    content = "\n\n".join(pages_text)
+                                except Exception as pdf_err:
+                                    print(f"[PDF EXTRACT WARNING] {pdf_err}")
+                            elif ext in ['.docx', '.doc']:
+                                try:
+                                    import io
+                                    import docx
+                                    doc = docx.Document(io.BytesIO(file_bytes))
+                                    content = "\n".join([p.text for p in doc.paragraphs if p.text])
+                                except Exception as docx_err:
+                                    print(f"[DOCX EXTRACT WARNING] {docx_err}")
+                        except Exception as extract_err:
+                            print(f"[FILE EXTRACT ERROR] {extract_err}")
+
+                    file_url = convert_file_to_base64_uri(file, allowed_ext=['.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg', '.txt', '.md', '.xlsx', '.csv'])
                     file_name = filename
                     
             res = db.policies.insert_one({
                 "tenant_id": tenant_id,
                 "category": category,
                 "title": title,
-                "content": content,
+                "content": content or '',
                 "file_url": file_url,
-                "file_name": file_name
+                "file_name": file_name,
+                "created_at": datetime.datetime.utcnow().isoformat()
             })
             p = db.policies.find_one({"_id": res.inserted_id})
             return jsonify(serialize_doc(p))
@@ -3694,6 +3940,8 @@ def handle_policies():
             policies = list(db.policies.find({"tenant_id": tenant_id}))
             return jsonify(serialize_list(policies))
     except Exception as e:
+        import traceback
+        print(f"[ERROR] handle_policies failed:\n{traceback.format_exc()}")
         return jsonify({"detail": str(e)}), 500
 
 @app.route('/api/policies/search', methods=['GET'])
@@ -3844,6 +4092,20 @@ def mark_attendance():
         lock_record = db.attendance_locks.find_one({"year": year, "month": month_str})
         if lock_record and lock_record.get("locked"):
             return jsonify({"detail": "This month's attendance has been locked and finalized by HR. No further selections can be submitted."}), 403
+
+        # Enforce 10:00 AM to 10:30 AM window rule for non-admin employees unless permitted by HR
+        user_role = g.current_user.get("role")
+        user_doc = db.employees.find_one({"_id": ObjectId(user_id)})
+        allow_late = user_doc.get("allow_late_attendance_marking", False) if user_doc else False
+
+        if user_role != "Admin (HR)" and not allow_late:
+            current_time = ist_now.time()
+            start_time = datetime.time(10, 0, 0)
+            end_time = datetime.time(10, 30, 0)
+            if not (start_time <= current_time <= end_time):
+                return jsonify({
+                    "detail": f"Attendance marking is restricted to 10:00 AM – 10:30 AM IST only. Current time is {ist_now.strftime('%I:%M %p')}. Contact HR Admin to permit late attendance marking."
+                }), 403
 
         data = request.json or {}
         selection = data.get("selection")
