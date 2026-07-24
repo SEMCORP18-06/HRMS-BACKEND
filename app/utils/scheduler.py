@@ -3,18 +3,12 @@ from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, timedelta
 import random
 from bson.objectid import ObjectId
+from pymongo import UpdateOne
 
 from ..database import db
 from .mailer import send_email
 
 scheduler = BackgroundScheduler()
-
-# Generate exactly 3 spaced business days and assign quotes for the given month
-def ensure_daily_pulse_schedule(year, month):
-    try:
-        tenant_id = "semco"
-        
-        TARGET_PULSES_PER_MONTH = 12
 
 def seed_quotes_library():
     try:
@@ -242,7 +236,7 @@ def seed_quotes_library():
             {"text": "If you don't build your dream, someone else will hire you to help them build theirs.", "author": "Dhirubhai Ambani"},
             {"text": "Think big, think fast, think ahead. Ideas are no one's monopoly.", "author": "Dhirubhai Ambani"},
             {"text": "Challenge the status quo and push the boundaries of what is possible.", "author": "Ratan Tata"},
-            {"text": "None can destroy iron, but its own rust can. Likewise, none can destroy a person, but their own mindset can.", "author": "Ratan Tata"},
+            {"text": "None can destroy iron, but its own rust can. Likely, none can destroy a person, but their own mindset can.", "author": "Ratan Tata"},
             {"text": "I don't believe in taking right decisions. I take decisions and then make them right.", "author": "Ratan Tata"},
             {"text": "If you want to walk fast, walk alone. But if you want to walk far, walk together.", "author": "Ratan Tata"},
             {"text": "Take the stones people throw at you and use them to build a monument.", "author": "Ratan Tata"},
@@ -263,7 +257,9 @@ def seed_quotes_library():
             {"text": "Sometimes the questions are complicated and the answers are simple.", "author": "Dr. Seuss"},
             {"text": "Unless someone like you cares a whole awful lot, nothing is going to get better. It's not.", "author": "Dr. Seuss"}
         ]
-        db.quotes.insert_many(default_quotes)
+        
+        ops = [UpdateOne({"text": q["text"]}, {"$setOnInsert": q}, upsert=True) for q in default_quotes]
+        db.quotes.bulk_write(ops)
     except Exception as e:
         print(f"[SCHEDULER] Error seeding quote library: {str(e)}")
 
