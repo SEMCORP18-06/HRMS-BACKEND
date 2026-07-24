@@ -333,62 +333,101 @@ def ensure_daily_pulse_schedule(year, month):
 # Daily Pulse Quote Sender (9:00 AM Blast to active employee corporate emails)
 def check_and_send_daily_pulse():
     try:
-        today = datetime.now().date().isoformat()
+        tenant_id = "semco"
+        now_dt = datetime.now()
+        today = now_dt.date().isoformat()
         print(f"[SCHEDULER] Running Daily Pulse check for today ({today})...")
         
-        pulses = list(db.daily_pulse_schedule.find({
+        # Check if already delivered today
+        already_delivered = db.daily_pulse_schedule.find_one({
+            "tenant_id": tenant_id,
+            "date": today,
+            "status": "Delivered"
+        })
+        if already_delivered:
+            print(f"[SCHEDULER] Daily Pulse for today ({today}) was already delivered. Skipping duplicate dispatch.")
+            return
+
+        # Find scheduled pulse for today
+        pulse = db.daily_pulse_schedule.find_one({
+            "tenant_id": tenant_id,
             "date": today,
             "status": "Scheduled"
+        })
+        
+        # If no pulse pre-scheduled for today, create one automatically if today is a business day (Mon-Fri)
+        if not pulse:
+            if now_dt.weekday() < 5:  # Monday to Friday
+                print(f"[SCHEDULER] No pre-scheduled pulse for today ({today}). Auto-selecting quote from library...")
+                quotes = list(db.quotes.find({}))
+                if not quotes:
+                    print(f"[SCHEDULER] No quotes in library for auto-dispatch on {today}.")
+                    return
+                
+                # Pick unused quote
+                used_texts = {s["quote"] for s in db.daily_pulse_schedule.find({"tenant_id": tenant_id}, {"quote": 1})}
+                unused = [q for q in quotes if q.get("text") not in used_texts]
+                selected_q = random.choice(unused) if unused else random.choice(quotes)
+                
+                pulse_id = db.daily_pulse_schedule.insert_one({
+                    "tenant_id": tenant_id,
+                    "date": today,
+                    "time": "10:30",
+                    "quote": selected_q.get("text"),
+                    "author": selected_q.get("author", "Unknown"),
+                    "status": "Scheduled",
+                    "delivered_at": None
+                }).inserted_id
+                
+                pulse = db.daily_pulse_schedule.find_one({"_id": pulse_id})
+            else:
+                print(f"[SCHEDULER] Today ({today}) is a weekend. Skipping automatic Daily Pulse blast.")
+                return
+
+        # Delta-sync: get all active corporate emails (Company Email Address)
+        employees = list(db.employees.find({
+            "tenant_id": pulse.get("tenant_id", "semco"),
+            "status": "ACTIVE"
         }))
         
-        if not pulses:
+        emails = [emp.get("email") for emp in employees if emp.get("email")]
+        if not emails:
+            print(f"[SCHEDULER] No active employee emails for Daily Pulse blast on {today}")
             return
             
-        for pulse in pulses:
-            # Delta-sync: get all active corporate emails (Company Email Address)
-            employees = list(db.employees.find({
-                "tenant_id": pulse.get("tenant_id", "semco"),
-                "status": "ACTIVE"
-            }))
-            
-            emails = [emp.get("email") for emp in employees if emp.get("email")]
-            if not emails:
-                print(f"[SCHEDULER] No active employee emails for Daily Pulse blast on {today}")
-                continue
-                
-            quote_text = pulse.get("quote")
-            quote_author = pulse.get("author", "Unknown")
-            
-            body = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 20px; color: #1e293b;">
-                    <div style="background-color: white; padding: 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-                        <h2 style="color: #3b82f6; border-bottom: 2px solid #eff6ff; padding-bottom: 10px; margin-top: 0;">Daily Pulse 🌟</h2>
-                        <blockquote style="font-size: 18px; font-style: italic; color: #334155; border-left: 4px solid #3b82f6; padding-left: 15px; margin: 20px 0;">
-                            "{quote_text}"
-                        </blockquote>
-                        <p style="text-align: right; font-weight: bold; color: #64748b;">— {quote_author}</p>
-                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-                        <p style="font-size: 12px; color: #94a3b8; text-align: center;">You received this as part of your company's daily motivation program.</p>
-                    </div>
-                </body>
-            </html>
-            """
-            
-            to_emails_str = ", ".join(emails)
-            send_email(to_emails_str, "Daily Pulse 🌟", body)
-            
-            # Mark as delivered
-            db.daily_pulse_schedule.update_one(
-                {"_id": pulse["_id"]},
-                {
-                    "$set": {
-                        "status": "Delivered",
-                        "delivered_at": datetime.now().isoformat()
-                    }
+        quote_text = pulse.get("quote")
+        quote_author = pulse.get("author", "Unknown")
+        
+        body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 20px; color: #1e293b;">
+                <div style="background-color: white; padding: 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                    <h2 style="color: #3b82f6; border-bottom: 2px solid #eff6ff; padding-bottom: 10px; margin-top: 0;">Daily Pulse 🌟</h2>
+                    <blockquote style="font-size: 18px; font-style: italic; color: #334155; border-left: 4px solid #3b82f6; padding-left: 15px; margin: 20px 0;">
+                        "{quote_text}"
+                    </blockquote>
+                    <p style="text-align: right; font-weight: bold; color: #64748b;">— {quote_author}</p>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                    <p style="font-size: 12px; color: #94a3b8; text-align: center;">You received this as part of your company's daily motivation program.</p>
+                </div>
+            </body>
+        </html>
+        """
+        
+        to_emails_str = ", ".join(emails)
+        send_email(to_emails_str, "Daily Pulse 🌟", body)
+        
+        # Mark as delivered
+        db.daily_pulse_schedule.update_one(
+            {"_id": pulse["_id"]},
+            {
+                "$set": {
+                    "status": "Delivered",
+                    "delivered_at": datetime.now().isoformat()
                 }
-            )
-            print(f"[SCHEDULER] Successfully dispatched Daily Pulse blast to {len(emails)} recipients.")
+            }
+        )
+        print(f"[SCHEDULER] Successfully dispatched Daily Pulse blast to {len(emails)} recipients on {today}.")
     except Exception as e:
         print(f"[SCHEDULER] Daily Pulse dispatch error: {str(e)}")
 
