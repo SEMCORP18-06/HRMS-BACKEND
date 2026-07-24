@@ -1849,6 +1849,47 @@ def trigger_daily_pulse():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+# --- Vercel Cron Endpoint ---
+@app.route('/api/cron/daily-tasks', methods=['GET', 'POST'])
+def run_daily_cron_tasks():
+    """Vercel Cron endpoint triggered automatically at 10:30 AM IST (05:00 UTC) daily.
+    Executes Daily Pulse dispatch, Birthday/Anniversary celebrations, and Holiday reminders."""
+    try:
+        from .utils.scheduler import (
+            ensure_daily_pulse_schedule,
+            check_and_send_daily_pulse,
+            check_and_send_celebrations,
+            check_and_send_holiday_notifications
+        )
+        today = datetime.datetime.now()
+        
+        # 1. Ensure pulse schedule is populated for this month & next
+        ensure_daily_pulse_schedule(today.year, today.month)
+        next_month_date = today + datetime.timedelta(days=32)
+        ensure_daily_pulse_schedule(next_month_date.year, next_month_date.month)
+        
+        # 2. Dispatch today's Daily Pulse quote if scheduled
+        check_and_send_daily_pulse()
+        
+        # 3. Dispatch Birthday & Work Anniversary greetings & broadcasts
+        check_and_send_celebrations()
+        
+        # 4. Dispatch Holiday notifications
+        check_and_send_holiday_notifications()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Daily cron tasks executed successfully for {today.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "status": "error",
+            "detail": str(e),
+            "trace": traceback.format_exc()
+        }), 500
+
+
 # --- Email Sandbox ---
 @app.route('/api/sandbox/test-email', methods=['POST'])
 @login_required
