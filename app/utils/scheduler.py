@@ -16,15 +16,11 @@ def ensure_daily_pulse_schedule(year, month):
         
         TARGET_PULSES_PER_MONTH = 12
 
-        # Check if schedule already exists for this year and month
-        existing_count = db.daily_pulse_schedule.count_documents({
-            "tenant_id": tenant_id,
-            "date": {"$regex": f"^{year}-{month:02d}-"}
-        })
-        if existing_count >= TARGET_PULSES_PER_MONTH:
+def seed_quotes_library():
+    try:
+        if db.quotes.count_documents({}) >= 300:
             return
-
-        # Seed & Upsert 300+ curated quotes into db.quotes library
+            
         default_quotes = [
             {"text": "The only way to do great work is to love what you do.", "author": "Steve Jobs"},
             {"text": "Your time is limited, so don't waste it living someone else's life.", "author": "Steve Jobs"},
@@ -267,10 +263,19 @@ def ensure_daily_pulse_schedule(year, month):
             {"text": "Sometimes the questions are complicated and the answers are simple.", "author": "Dr. Seuss"},
             {"text": "Unless someone like you cares a whole awful lot, nothing is going to get better. It's not.", "author": "Dr. Seuss"}
         ]
+        db.quotes.insert_many(default_quotes)
+    except Exception as e:
+        print(f"[SCHEDULER] Error seeding quote library: {str(e)}")
 
-        # Upsert all quotes into db.quotes library so library expands dynamically
-        for q in default_quotes:
-            db.quotes.update_one({"text": q["text"]}, {"$setOnInsert": q}, upsert=True)
+# Generate exactly spaced business days and assign quotes for the given month
+def ensure_daily_pulse_schedule(year, month):
+    try:
+        tenant_id = "semco"
+        
+        TARGET_PULSES_PER_MONTH = 12
+
+        # Ensure quote library is seeded
+        seed_quotes_library()
 
         quotes = list(db.quotes.find({}))
 
