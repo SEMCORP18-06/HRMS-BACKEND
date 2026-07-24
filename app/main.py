@@ -2146,7 +2146,7 @@ def handle_appreciation():
 def send_appreciation(appreciation_id):
     smtp_server = None
     try:
-        from app.utils.mailer import SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_PORT
+        from .utils.mailer import SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_PORT
         if SMTP_HOST and SMTP_USER and SMTP_PASSWORD:
             try:
                 import smtplib
@@ -2936,7 +2936,7 @@ def delete_event(event_id):
         tenant_id = g.current_user["tenant_id"]
         
         # Remove any queued APScheduler reminder jobs for this event
-        from app.utils.scheduler import scheduler
+        from .utils.scheduler import scheduler
         intervals = ["30_days_before", "7_days_before", "1_day_before", "30_minutes_before"]
         for name in intervals:
             job_id = f"event_{event_id}_{name}"
@@ -2996,7 +2996,7 @@ def get_holidays():
         year_param = request.args.get('year', type=int)
         if year_param:
             # Dynamically seed the year if it doesn't have any holiday data yet
-            from app.utils.scheduler import seed_holidays_for_year
+            from .utils.scheduler import seed_holidays_for_year
             seed_holidays_for_year(year_param)
             
         holidays = list(db.holidays.find({}))
@@ -4328,7 +4328,7 @@ def export_attendance():
         month = request.args.get("month", f"{datetime.date.today().month:02d}")
         fmt = request.args.get("format", "csv").lower()
         
-        from app.utils.attendance_export import generate_attendance_data, export_csv, export_xls, export_word, export_pdf
+        from .utils.attendance_export import generate_attendance_data, export_csv, export_xls, export_word, export_pdf
         
         summary_data, detailed_data = generate_attendance_data(db, year, month)
         
