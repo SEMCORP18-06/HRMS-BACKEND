@@ -2874,7 +2874,7 @@ def handle_events():
                     is_exit = ev.get("is_exit_interview") or "exit interview" in ev.get("title", "").lower()
                     if is_exit:
                         # Exit interview is only visible to the specific employee being offboarded
-                        if ev.get("employee_id") == emp_id_str:
+                        if str(ev.get("employee_id", "")) == emp_id_str:
                             filtered_events.append(ev)
                         elif not ev.get("employee_id"):
                             # Fallback: check if employee name matches in title (e.g. 'Exit Interview: Mrunal')
@@ -2885,8 +2885,17 @@ def handle_events():
                     else:
                         # Regular events are visible if attendee list is empty (public) or if the employee is an attendee
                         attendees = ev.get("attendees", [])
-                        if not attendees or any(str(att.get("id")) == emp_id_str for att in attendees):
+                        if not attendees:
                             filtered_events.append(ev)
+                        else:
+                            is_attendee = False
+                            for att in attendees:
+                                att_id = str(att.get("id") if isinstance(att, dict) else att)
+                                if att_id == emp_id_str:
+                                    is_attendee = True
+                                    break
+                            if is_attendee:
+                                filtered_events.append(ev)
                 events = filtered_events
                 
             return jsonify([{
