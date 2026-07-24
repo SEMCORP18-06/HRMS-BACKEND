@@ -949,14 +949,14 @@ def check_and_send_celebrations():
         print(f"[SCHEDULER] Celebrations check error: {str(e)}")
 
 def seed_next_months_pulses():
-    """Runs on the 1st of every month. Seeds pulses for this month and the next,
-    so the schedule always has a rolling 2-month window regardless of restarts."""
+    """Seeds pulses for a full 12-month rolling window ahead."""
     try:
         today = datetime.now()
-        ensure_daily_pulse_schedule(today.year, today.month)
-        next_month_date = today + timedelta(days=32)
-        ensure_daily_pulse_schedule(next_month_date.year, next_month_date.month)
-        print(f"[SCHEDULER] Monthly pulse seeder: seeded {today.year}-{today.month:02d} and {next_month_date.year}-{next_month_date.month:02d}.")
+        for i in range(12):
+            m = (today.month - 1 + i) % 12 + 1
+            y = today.year + (today.month - 1 + i) // 12
+            ensure_daily_pulse_schedule(y, m)
+        print(f"[SCHEDULER] Monthly pulse seeder: seeded 12-month rolling window starting {today.year}-{today.month:02d}.")
     except Exception as e:
         print(f"[SCHEDULER] Monthly pulse seeder error: {str(e)}")
 
@@ -968,9 +968,10 @@ def init_scheduler():
     seed_holidays()
     try:
         today = datetime.now()
-        ensure_daily_pulse_schedule(today.year, today.month)
-        next_month_date = today + timedelta(days=32)
-        ensure_daily_pulse_schedule(next_month_date.year, next_month_date.month)
+        for i in range(12):
+            m = (today.month - 1 + i) % 12 + 1
+            y = today.year + (today.month - 1 + i) // 12
+            ensure_daily_pulse_schedule(y, m)
     except Exception as e:
         print(f"[SCHEDULER] Error seeding database defaults on startup: {str(e)}")
 

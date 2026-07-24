@@ -1770,12 +1770,12 @@ def get_daily_pulse_schedule():
         tenant_id = g.current_user["tenant_id"]
         from .utils.scheduler import ensure_daily_pulse_schedule
         
-        # Pre-populate schedule for current and next month
+        # Pre-populate schedule for a full 12-month rolling window ahead
         today = datetime.datetime.now()
-        ensure_daily_pulse_schedule(today.year, today.month)
-        
-        next_month_date = today + datetime.timedelta(days=32)
-        ensure_daily_pulse_schedule(next_month_date.year, next_month_date.month)
+        for i in range(12):
+            m = (today.month - 1 + i) % 12 + 1
+            y = today.year + (today.month - 1 + i) // 12
+            ensure_daily_pulse_schedule(y, m)
         
         schedules = list(db.daily_pulse_schedule.find({"tenant_id": tenant_id}))
         
@@ -1863,10 +1863,11 @@ def run_daily_cron_tasks():
         )
         today = datetime.datetime.now()
         
-        # 1. Ensure pulse schedule is populated for this month & next
-        ensure_daily_pulse_schedule(today.year, today.month)
-        next_month_date = today + datetime.timedelta(days=32)
-        ensure_daily_pulse_schedule(next_month_date.year, next_month_date.month)
+        # 1. Ensure pulse schedule is populated for a full 12-month rolling window ahead
+        for i in range(12):
+            m = (today.month - 1 + i) % 12 + 1
+            y = today.year + (today.month - 1 + i) // 12
+            ensure_daily_pulse_schedule(y, m)
         
         # 2. Dispatch today's Daily Pulse quote if scheduled
         check_and_send_daily_pulse()
