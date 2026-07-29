@@ -3998,7 +3998,11 @@ def handle_policies():
             p = db.policies.find_one({"_id": res.inserted_id})
             return jsonify(serialize_doc(p))
         else:
-            policies = list(db.policies.find({"tenant_id": tenant_id}))
+            include_archived = request.args.get('archived', '').lower() == 'true'
+            if include_archived:
+                policies = list(db.policies.find({"tenant_id": tenant_id, "is_archived": True}))
+            else:
+                policies = list(db.policies.find({"tenant_id": tenant_id, "is_archived": {"$ne": True}}))
             return jsonify(serialize_list(policies))
     except Exception as e:
         import traceback
@@ -4017,16 +4021,61 @@ def delete_policy(policy_id):
         except Exception:
             query["_id"] = policy_id
 
-        res = db.policies.delete_one(query)
-        if res.deleted_count == 0:
-            # Fallback attempt matching string ID format if non-ObjectId
-            res = db.policies.delete_one({"_id": policy_id, "tenant_id": tenant_id})
-            if res.deleted_count == 0:
-                return jsonify({"detail": "Policy SOP not found"}), 404
-        return jsonify({"message": "Policy SOP deleted successfully."})
+        res = db.policies.update_one(
+            query,
+            {"$set": {"is_archived": True, "archived_at": datetime.datetime.utcnow().isoformat()}}
+        )
+        if res.matched_count == 0:
+            return jsonify({"detail": "Policy SOP not found"}), 404
+        return jsonify({"message": "Policy SOP moved to Trash / Recovery Bin."})
     except Exception as e:
         import traceback
         print(f"[ERROR] delete_policy failed:\n{traceback.format_exc()}")
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/policies/<policy_id>/restore', methods=['PUT', 'POST'])
+@login_required
+def restore_policy(policy_id):
+    try:
+        tenant_id = g.current_user["tenant_id"]
+        from bson import ObjectId
+        query = {"tenant_id": tenant_id}
+        try:
+            query["_id"] = ObjectId(policy_id)
+        except Exception:
+            query["_id"] = policy_id
+
+        res = db.policies.update_one(
+            query,
+            {"$set": {"is_archived": False, "restored_at": datetime.datetime.utcnow().isoformat()}}
+        )
+        if res.matched_count == 0:
+            return jsonify({"detail": "Policy SOP not found"}), 400
+        return jsonify({"message": "Policy SOP restored successfully to active policies roster."})
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] restore_policy failed:\n{traceback.format_exc()}")
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/policies/<policy_id>/permanent', methods=['DELETE'])
+@login_required
+def permanent_delete_policy(policy_id):
+    try:
+        tenant_id = g.current_user["tenant_id"]
+        from bson import ObjectId
+        query = {"tenant_id": tenant_id}
+        try:
+            query["_id"] = ObjectId(policy_id)
+        except Exception:
+            query["_id"] = policy_id
+
+        res = db.policies.delete_one(query)
+        if res.deleted_count == 0:
+            return jsonify({"detail": "Policy SOP not found"}), 404
+        return jsonify({"message": "Policy SOP permanently deleted."})
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] permanent_delete_policy failed:\n{traceback.format_exc()}")
         return jsonify({"detail": str(e)}), 500
 
 @app.route('/api/policies/search', methods=['GET'])
@@ -4038,7 +4087,7 @@ def search_policies():
         
     try:
         tenant_id = g.current_user["tenant_id"]
-        policies = list(db.policies.find({"tenant_id": tenant_id}))
+        policies = list(db.policies.find({"tenant_id": tenant_id, "is_archived": {"$ne": True}}))
         
         matches = []
         for p in policies:
