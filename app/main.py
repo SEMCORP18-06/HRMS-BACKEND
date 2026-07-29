@@ -3952,30 +3952,36 @@ def handle_policies():
                     file_bytes = file.read()
                     file.seek(0)
 
-                    # If text content is empty, extract text from uploaded document
-                    if not content or len(content.strip()) == 0:
-                        try:
-                            if ext in ['.txt', '.md']:
-                                content = file_bytes.decode('utf-8', errors='ignore')
-                            elif ext == '.pdf':
-                                try:
-                                    import io
-                                    from pypdf import PdfReader
-                                    reader = PdfReader(io.BytesIO(file_bytes))
-                                    pages_text = [page.extract_text() for page in reader.pages if page.extract_text()]
-                                    content = "\n\n".join(pages_text)
-                                except Exception as pdf_err:
-                                    print(f"[PDF EXTRACT WARNING] {pdf_err}")
-                            elif ext in ['.docx', '.doc']:
-                                try:
-                                    import io
-                                    import docx
-                                    doc = docx.Document(io.BytesIO(file_bytes))
-                                    content = "\n".join([p.text for p in doc.paragraphs if p.text])
-                                except Exception as docx_err:
-                                    print(f"[DOCX EXTRACT WARNING] {docx_err}")
-                        except Exception as extract_err:
-                            print(f"[FILE EXTRACT ERROR] {extract_err}")
+                    # Always extract text from uploaded document if present
+                    extracted_text = ""
+                    try:
+                        if ext in ['.txt', '.md']:
+                            extracted_text = file_bytes.decode('utf-8', errors='ignore')
+                        elif ext == '.pdf':
+                            try:
+                                import io
+                                from pypdf import PdfReader
+                                reader = PdfReader(io.BytesIO(file_bytes))
+                                pages_text = [page.extract_text() for page in reader.pages if page.extract_text()]
+                                extracted_text = "\n\n".join(pages_text)
+                            except Exception as pdf_err:
+                                print(f"[PDF EXTRACT WARNING] {pdf_err}")
+                        elif ext in ['.docx', '.doc']:
+                            try:
+                                import io
+                                import docx
+                                doc = docx.Document(io.BytesIO(file_bytes))
+                                extracted_text = "\n".join([p.text for p in doc.paragraphs if p.text])
+                            except Exception as docx_err:
+                                print(f"[DOCX EXTRACT WARNING] {docx_err}")
+                    except Exception as extract_err:
+                        print(f"[FILE EXTRACT ERROR] {extract_err}")
+
+                    if extracted_text:
+                        if content and len(content.strip()) > 0:
+                            content = content.strip() + "\n\n--- Document Text ---\n" + extracted_text
+                        else:
+                            content = extracted_text
 
                     file_url = convert_file_to_base64_uri(file, allowed_ext=['.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg', '.txt', '.md', '.xlsx', '.csv'])
                     file_name = filename
@@ -3997,6 +4003,30 @@ def handle_policies():
     except Exception as e:
         import traceback
         print(f"[ERROR] handle_policies failed:\n{traceback.format_exc()}")
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/policies/<policy_id>', methods=['DELETE'])
+@login_required
+def delete_policy(policy_id):
+    try:
+        tenant_id = g.current_user["tenant_id"]
+        from bson import ObjectId
+        query = {"tenant_id": tenant_id}
+        try:
+            query["_id"] = ObjectId(policy_id)
+        except Exception:
+            query["_id"] = policy_id
+
+        res = db.policies.delete_one(query)
+        if res.deleted_count == 0:
+            # Fallback attempt matching string ID format if non-ObjectId
+            res = db.policies.delete_one({"_id": policy_id, "tenant_id": tenant_id})
+            if res.deleted_count == 0:
+                return jsonify({"detail": "Policy SOP not found"}), 404
+        return jsonify({"message": "Policy SOP deleted successfully."})
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] delete_policy failed:\n{traceback.format_exc()}")
         return jsonify({"detail": str(e)}), 500
 
 @app.route('/api/policies/search', methods=['GET'])
