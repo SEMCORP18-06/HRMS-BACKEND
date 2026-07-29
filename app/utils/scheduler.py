@@ -416,7 +416,7 @@ def check_and_send_daily_pulse():
         """
         
         to_emails_str = ", ".join(emails)
-        send_email(to_emails_str, "Daily Pulse 🌟", body)
+        send_email(to_emails_str, "Daily Pulse 🌟", body, as_group=True)
         
         # Mark as delivered
         db.daily_pulse_schedule.update_one(
@@ -879,7 +879,7 @@ def check_and_send_celebrations():
                             if other.get("personal_email"):
                                 other_emails.append(other["personal_email"])
                     if other_emails:
-                        send_email(", ".join(other_emails), broadcast_subject, broadcast_body)
+                        send_email(", ".join(other_emails), broadcast_subject, broadcast_body, as_group=True)
                         print(f"[SCHEDULER] Dispatched Birthday announcement for {emp.get('name')} to all other employees.")
 
             # ── Work Anniversary ───────────────────────────────────────────────
@@ -944,7 +944,7 @@ def check_and_send_celebrations():
                                 if other.get("personal_email"):
                                     other_emails.append(other["personal_email"])
                         if other_emails:
-                            send_email(", ".join(other_emails), broadcast_subject, broadcast_body)
+                            send_email(", ".join(other_emails), broadcast_subject, broadcast_body, as_group=True)
                             print(f"[SCHEDULER] Dispatched Work Anniversary announcement for {emp.get('name')} ({ordinal}) to all other employees.")
     except Exception as e:
         print(f"[SCHEDULER] Celebrations check error: {str(e)}")

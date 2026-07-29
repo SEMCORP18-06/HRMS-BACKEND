@@ -227,10 +227,11 @@ def apply_email_styles(html_body: str) -> str:
     return html_body
 
 
-def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None, inline_images: list = None, server = None):
+def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None, inline_images: list = None, server = None, as_group: bool = False):
     """
     Sends an email using SMTP if credentials are configured, or logs it to mock_emails.log.
-    Supports comma-separated recipients by sending separate individual transactions.
+    Supports comma-separated recipients by sending separate individual transactions (default)
+    or as a single multi-recipient email chain in Sent box when as_group=True.
     """
     recipients = [r.strip() for r in to_email.split(',') if r.strip()]
     if not recipients:
@@ -248,21 +249,19 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                 server.login(SMTP_USER, SMTP_PASSWORD)
                 should_close = True
 
-            for recipient in recipients:
-                # Use 'related' to embed inline image attachments correctly
+            if as_group:
+                # Single email chain sent to all recipients in 'To' header (1 Sent item)
                 msg = MIMEMultipart('related')
                 msg['From'] = f"HR SEMCO Groups <{SENDER_EMAIL}>"
-                msg['To'] = recipient
+                msg['To'] = ", ".join(recipients)
                 msg['Subject'] = Header(subject, 'utf-8')
 
                 msg_alternative = MIMEMultipart('alternative')
                 msg.attach(msg_alternative)
 
-                # Attach HTML text body
                 msg_html = MIMEText(body, 'html', 'utf-8')
                 msg_alternative.attach(msg_html)
 
-                # Attach inline logo
                 if _LOGO_PATH and os.path.exists(_LOGO_PATH):
                     try:
                         with open(_LOGO_PATH, 'rb') as f:
@@ -274,7 +273,6 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                     except Exception as e:
                         safe_print(f"[MAILER] Error attaching inline logo: {str(e)}")
 
-                # Attach other inline images if any
                 if inline_images:
                     for img in inline_images:
                         try:
@@ -285,7 +283,6 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                         except Exception as img_err:
                             safe_print(f"[MAILER] Error attaching inline image: {str(img_err)}")
 
-                # Attach standard document attachments if any
                 if attachment_path and os.path.exists(attachment_path):
                     try:
                         with open(attachment_path, "rb") as f:
@@ -295,8 +292,58 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                     except Exception as e:
                         safe_print(f"[MAILER] Error attaching file: {str(e)}")
 
-                server.sendmail(SENDER_EMAIL, recipient, msg.as_string())
-                safe_print(f"[MAILER] Real email sent to {recipient}: {subject}")
+                server.sendmail(SENDER_EMAIL, recipients, msg.as_string())
+                safe_print(f"[MAILER] Real group email chain sent to {len(recipients)} recipients: {subject}")
+            else:
+                for recipient in recipients:
+                    # Use 'related' to embed inline image attachments correctly
+                    msg = MIMEMultipart('related')
+                    msg['From'] = f"HR SEMCO Groups <{SENDER_EMAIL}>"
+                    msg['To'] = recipient
+                    msg['Subject'] = Header(subject, 'utf-8')
+
+                    msg_alternative = MIMEMultipart('alternative')
+                    msg.attach(msg_alternative)
+
+                    # Attach HTML text body
+                    msg_html = MIMEText(body, 'html', 'utf-8')
+                    msg_alternative.attach(msg_html)
+
+                    # Attach inline logo
+                    if _LOGO_PATH and os.path.exists(_LOGO_PATH):
+                        try:
+                            with open(_LOGO_PATH, 'rb') as f:
+                                logo_data = f.read()
+                            msg_logo = MIMEImage(logo_data)
+                            msg_logo.add_header('Content-ID', '<logo_image>')
+                            msg_logo.add_header('Content-Disposition', 'inline', filename='logo.png')
+                            msg.attach(msg_logo)
+                        except Exception as e:
+                            safe_print(f"[MAILER] Error attaching inline logo: {str(e)}")
+
+                    # Attach other inline images if any
+                    if inline_images:
+                        for img in inline_images:
+                            try:
+                                msg_img = MIMEImage(img["data"])
+                                msg_img.add_header('Content-ID', f"<{img['content_id']}>")
+                                msg_img.add_header('Content-Disposition', 'inline', filename=img.get('filename', 'image.png'))
+                                msg.attach(msg_img)
+                            except Exception as img_err:
+                                safe_print(f"[MAILER] Error attaching inline image: {str(img_err)}")
+
+                    # Attach standard document attachments if any
+                    if attachment_path and os.path.exists(attachment_path):
+                        try:
+                            with open(attachment_path, "rb") as f:
+                                part = MIMEApplication(f.read(), Name=attachment_name or os.path.basename(attachment_path))
+                            part['Content-Disposition'] = f'attachment; filename="{attachment_name or os.path.basename(attachment_path)}"'
+                            msg.attach(part)
+                        except Exception as e:
+                            safe_print(f"[MAILER] Error attaching file: {str(e)}")
+
+                    server.sendmail(SENDER_EMAIL, recipient, msg.as_string())
+                    safe_print(f"[MAILER] Real email sent to {recipient}: {subject}")
 
             if should_close:
                 server.quit()
@@ -306,10 +353,10 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
             # Fallback to logging
 
     # Mock fallback
-    for recipient in recipients:
+    if as_group:
         log_msg = f"\n{'='*50}\n"
         log_msg += f"DATE: {datetime.datetime.now().isoformat()}\n"
-        log_msg += f"TO: {recipient}\n"
+        log_msg += f"TO (GROUP CHAIN): {', '.join(recipients)}\n"
         log_msg += f"FROM: HR SEMCO Groups <{SENDER_EMAIL}>\n"
         log_msg += f"SUBJECT: {subject}\n"
         log_msg += f"BODY:\n{body}\n"
@@ -323,5 +370,24 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
         except Exception as e:
             safe_print(f"[MAILER] Error writing to mock log: {str(e)}")
 
-        safe_print(f"[MAILER - MOCK] Logged email to {recipient}: {subject}")
+        safe_print(f"[MAILER - MOCK] Logged group email chain to {len(recipients)} recipients: {subject}")
+    else:
+        for recipient in recipients:
+            log_msg = f"\n{'='*50}\n"
+            log_msg += f"DATE: {datetime.datetime.now().isoformat()}\n"
+            log_msg += f"TO: {recipient}\n"
+            log_msg += f"FROM: HR SEMCO Groups <{SENDER_EMAIL}>\n"
+            log_msg += f"SUBJECT: {subject}\n"
+            log_msg += f"BODY:\n{body}\n"
+            if attachment_path:
+                log_msg += f"ATTACHMENT: {attachment_name or os.path.basename(attachment_path)} (Path: {attachment_path}, Encrypted: Yes)\n"
+            log_msg += f"{'='*50}\n"
+
+            try:
+                with open(MOCK_EMAIL_LOG, "a", encoding="utf-8") as f_log:
+                    f_log.write(log_msg)
+            except Exception as e:
+                safe_print(f"[MAILER] Error writing to mock log: {str(e)}")
+
+            safe_print(f"[MAILER - MOCK] Logged email to {recipient}: {subject}")
     return True

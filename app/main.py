@@ -1844,7 +1844,7 @@ def trigger_daily_pulse():
         </html>
         """
         to_emails_str = ", ".join(emails)
-        send_email(to_emails_str, "Daily Pulse 🌟 (Manual Blast)", body)
+        send_email(to_emails_str, "Daily Pulse 🌟 (Manual Blast)", body, as_group=True)
         return jsonify({"message": f"Manual Daily Pulse blast sent successfully to {len(emails)} employees."})
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
