@@ -2284,11 +2284,9 @@ def send_appreciation(appreciation_id):
         </html>
         """
         
-        # 1. Send the appreciation card to the awardee's mailboxes
-        send_email(email, subject, body, attachment_path=attachment_path, attachment_name=attachment_name, inline_images=inline_images, server=smtp_server)
-            
-        # 2. Dispatch announcement emails to selected employees
+        # Dispatch appreciation announcement with TO = awardee, BCC = announcement recipients (1 email chain)
         announcement_recipients = appr.get("announcement_recipients") or []
+        broadcast_emails = []
         if announcement_recipients:
             rec_object_ids = []
             for rid in announcement_recipients:
@@ -2298,49 +2296,55 @@ def send_appreciation(appreciation_id):
                     pass
             
             recipients = list(db.employees.find({"_id": {"$in": rec_object_ids}}))
-            
-            dept = awardee.get("department", "General") if awardee else "General"
-            desg = (awardee.get("designation") or awardee.get("role") or "Employee") if awardee else "Employee"
-            
-            announce_subject = f"Company Announcement: Celebrating Employee Milestones! 🌟🎉"
-            announce_body = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; background-color: #faf5ff; padding: 20px; color: #1e293b;">
-                    <div style="background-color: white; padding: 40px; border-radius: 16px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-top: 8px solid #8b5cf6; text-align: center;">
-                        <span style="font-size: 50px;">🎉🌟</span>
-                        <h2 style="color: #6d28d9; margin-top: 15px; font-size: 22px;">Celebrating Employee Milestone!</h2>
-                        
-                        {photo_html}
-                        
-                        <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin-top: 20px;">
-                            Dear Team,<br><br>
-                            We are proud to announce that <b>{name}</b> has been awarded the <b>{type_label}</b> on <b>{date_str}</b>.
-                        </p>
-                        <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin: 6px 0;">
-                            <strong>Department:</strong> {dept}<br>
-                            <strong>Designation:</strong> {desg}
-                        </p>
-                        <div style="background-color: #faf5ff; border: 1px solid #ddd6fe; padding: 20px; margin: 20px 0; border-radius: 10px; text-align: left; font-style: italic; color: #4c1d95;">
-                            "{reason}"
-                        </div>
-                        <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left;">
-                            Please join us in congratulating <b>{name}</b> on this well-deserved recognition and wishing them continued success!
-                        </p>
-                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0;">
-                        <p style="font-size: 12px; color: #94a3b8;">People Operations & HR Team</p>
-                    </div>
-                </body>
-            </html>
-            """
-            
-            broadcast_emails = []
             for rec in recipients:
                 rec_company_email = rec.get("email")
-                if rec_company_email:
+                if rec_company_email and rec_company_email != email:
                     broadcast_emails.append(rec_company_email)
             
-            if broadcast_emails:
-                send_email(", ".join(broadcast_emails), announce_subject, announce_body, inline_images=inline_images, server=smtp_server)
+        dept = awardee.get("department", "General") if awardee else "General"
+        desg = (awardee.get("designation") or awardee.get("role") or "Employee") if awardee else "Employee"
+        
+        announce_subject = f"Congratulations {name} on your {type_label}! 🌟🎉"
+        announce_body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; background-color: #faf5ff; padding: 20px; color: #1e293b;">
+                <div style="background-color: white; padding: 40px; border-radius: 16px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-top: 8px solid #8b5cf6; text-align: center;">
+                    <span style="font-size: 50px;">🎉🌟</span>
+                    <h2 style="color: #6d28d9; margin-top: 15px; font-size: 22px;">Celebrating Employee Milestone!</h2>
+                    
+                    {photo_html}
+                    
+                    <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin-top: 20px;">
+                        Dear Team & <b>{name}</b>,<br><br>
+                        We are proud to announce that <b>{name}</b> has been awarded the <b>{type_label}</b> on <b>{date_str}</b>.
+                    </p>
+                    <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin: 6px 0;">
+                        <strong>Department:</strong> {dept}<br>
+                        <strong>Designation:</strong> {desg}
+                    </p>
+                    <div style="background-color: #faf5ff; border: 1px solid #ddd6fe; padding: 20px; margin: 20px 0; border-radius: 10px; text-align: left; font-style: italic; color: #4c1d95;">
+                        "{reason}"
+                    </div>
+                    <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left;">
+                        Please join us in congratulating <b>{name}</b> on this well-deserved recognition and wishing them continued success!
+                    </p>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0;">
+                    <p style="font-size: 12px; color: #94a3b8;">People Operations & HR Team</p>
+                </div>
+            </body>
+        </html>
+        """
+        
+        send_email(
+            to_email=email,
+            subject=announce_subject,
+            body=announce_body,
+            attachment_path=attachment_path,
+            attachment_name=attachment_name,
+            inline_images=inline_images,
+            server=smtp_server,
+            bcc_email=", ".join(broadcast_emails) if broadcast_emails else None
+        )
         
         db.appreciations.update_one({"_id": ObjectId(appreciation_id)}, {"$set": {"status": "SENT"}})
         if smtp_server:

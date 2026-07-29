@@ -227,14 +227,18 @@ def apply_email_styles(html_body: str) -> str:
     return html_body
 
 
-def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None, inline_images: list = None, server = None, as_group: bool = False):
+def send_email(to_email: str, subject: str, body: str, attachment_path: str = None, attachment_name: str = None, inline_images: list = None, server = None, as_group: bool = False, bcc_email: str = None):
     """
     Sends an email using SMTP if credentials are configured, or logs it to mock_emails.log.
-    Supports comma-separated recipients by sending separate individual transactions (default)
-    or as a single multi-recipient email chain in Sent box when as_group=True.
+    Supports:
+    - Standard individual send (default)
+    - Group chain (as_group=True): all recipients joined in To header
+    - TO + BCC group chain (bcc_email provided): celebrated/appreciated person in To header, broadcast audience in BCC
     """
-    recipients = [r.strip() for r in to_email.split(',') if r.strip()]
-    if not recipients:
+    to_recipients = [r.strip() for r in to_email.split(',') if r.strip()] if to_email else []
+    bcc_recipients = [r.strip() for r in bcc_email.split(',') if r.strip()] if (bcc_email and isinstance(bcc_email, str)) else []
+    
+    if not to_recipients and not bcc_recipients:
         return False
 
     body = apply_email_styles(body)
@@ -249,11 +253,14 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                 server.login(SMTP_USER, SMTP_PASSWORD)
                 should_close = True
 
-            if as_group:
-                # Single email chain sent to all recipients in 'To' header (1 Sent item)
+            if bcc_recipients or as_group:
+                # 1 Single email chain sent with To header and/or BCC envelope targets
                 msg = MIMEMultipart('related')
                 msg['From'] = f"HR SEMCO Groups <{SENDER_EMAIL}>"
-                msg['To'] = ", ".join(recipients)
+                if bcc_recipients:
+                    msg['To'] = ", ".join(to_recipients)
+                else:
+                    msg['To'] = ", ".join(to_recipients)
                 msg['Subject'] = Header(subject, 'utf-8')
 
                 msg_alternative = MIMEMultipart('alternative')
@@ -292,10 +299,14 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
                     except Exception as e:
                         safe_print(f"[MAILER] Error attaching file: {str(e)}")
 
-                server.sendmail(SENDER_EMAIL, recipients, msg.as_string())
-                safe_print(f"[MAILER] Real group email chain sent to {len(recipients)} recipients: {subject}")
+                envelope_targets = list(dict.fromkeys(to_recipients + bcc_recipients))
+                server.sendmail(SENDER_EMAIL, envelope_targets, msg.as_string())
+                if bcc_recipients:
+                    safe_print(f"[MAILER] Real TO+BCC group email sent with TO: {', '.join(to_recipients)} and BCC: {len(bcc_recipients)} recipients for subject: {subject}")
+                else:
+                    safe_print(f"[MAILER] Real group email chain sent to {len(to_recipients)} recipients: {subject}")
             else:
-                for recipient in recipients:
+                for recipient in to_recipients:
                     # Use 'related' to embed inline image attachments correctly
                     msg = MIMEMultipart('related')
                     msg['From'] = f"HR SEMCO Groups <{SENDER_EMAIL}>"
@@ -353,10 +364,12 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
             # Fallback to logging
 
     # Mock fallback
-    if as_group:
+    if bcc_recipients or as_group:
         log_msg = f"\n{'='*50}\n"
         log_msg += f"DATE: {datetime.datetime.now().isoformat()}\n"
-        log_msg += f"TO (GROUP CHAIN): {', '.join(recipients)}\n"
+        log_msg += f"TO: {', '.join(to_recipients)}\n"
+        if bcc_recipients:
+            log_msg += f"BCC ({len(bcc_recipients)} recipients): {', '.join(bcc_recipients)}\n"
         log_msg += f"FROM: HR SEMCO Groups <{SENDER_EMAIL}>\n"
         log_msg += f"SUBJECT: {subject}\n"
         log_msg += f"BODY:\n{body}\n"
@@ -370,9 +383,9 @@ def send_email(to_email: str, subject: str, body: str, attachment_path: str = No
         except Exception as e:
             safe_print(f"[MAILER] Error writing to mock log: {str(e)}")
 
-        safe_print(f"[MAILER - MOCK] Logged group email chain to {len(recipients)} recipients: {subject}")
+        safe_print(f"[MAILER - MOCK] Logged group email chain with TO: {', '.join(to_recipients)} and BCC: {len(bcc_recipients)}: {subject}")
     else:
-        for recipient in recipients:
+        for recipient in to_recipients:
             log_msg = f"\n{'='*50}\n"
             log_msg += f"DATE: {datetime.datetime.now().isoformat()}\n"
             log_msg += f"TO: {recipient}\n"

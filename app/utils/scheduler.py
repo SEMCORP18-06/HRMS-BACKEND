@@ -871,6 +871,7 @@ def check_and_send_celebrations():
                         </body>
                     </html>
                     """
+                    celebrant_to_str = to_email_str
                     other_emails = []
                     for other in employees:
                         if str(other["_id"]) != str(emp["_id"]):
@@ -878,9 +879,10 @@ def check_and_send_celebrations():
                                 other_emails.append(other["email"])
                             if other.get("personal_email"):
                                 other_emails.append(other["personal_email"])
-                    if other_emails:
-                        send_email(", ".join(other_emails), broadcast_subject, broadcast_body, as_group=True)
-                        print(f"[SCHEDULER] Dispatched Birthday announcement for {emp.get('name')} to all other employees.")
+                                
+                    if celebrant_to_str:
+                        send_email(to_email=celebrant_to_str, subject=broadcast_subject, body=broadcast_body, bcc_email=", ".join(other_emails) if other_emails else None)
+                        print(f"[SCHEDULER] Dispatched Birthday celebration email for {emp.get('name')} (TO: celebrant, BCC: {len(other_emails)} employees).")
 
             # ── Work Anniversary ───────────────────────────────────────────────
             doj_val = emp.get("doj") or emp.get("joining_date") or emp.get("anniversary")
@@ -892,32 +894,11 @@ def check_and_send_celebrations():
                     if years > 0:
                         ordinal = get_ordinal_suffix(years)
 
-                        # 1. Personal wish to the celebrant
-                        subject = f"Happy {ordinal} Work Anniversary, {emp.get('name', 'Employee')}! 🌟💼"
-                        body = f"""
-                        <html>
-                            <body style="font-family: Arial, sans-serif; background-color: #ecfdf5; padding: 20px; color: #1e293b;">
-                                <div style="background-color: white; padding: 40px 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
-                                    <h2 style="color: #10b981; text-align: center; margin-bottom: 8px;">Happy {ordinal} Work Anniversary! 🌟</h2>
-                                    <p style="font-size: 18px; font-weight: bold; color: #065f46; text-align: center; margin: 0 0 16px;">🎊 Congratulations! 🎊</p>
-                                    <p style="font-size: 16px; line-height: 1.6; color: #475569; text-align: center; margin: 0 auto 20px; max-width: 480px;">
-                                        <b>{emp.get('name', 'Employee')}</b>, on completing your <b>{ordinal}</b> year with us! Thank you for your dedication, hard work, and support. We are proud to have you on our team.
-                                    </p>
-                                    <div style="text-align: center; font-size: 50px; margin: 24px 0;">💼✨🚀🏆</div>
-                                    <p style="font-size: 14px; text-align: center; color: #94a3b8; margin-top: 24px;">Best regards,<br>The People Operations Team</p>
-                                </div>
-                            </body>
-                        </html>
-                        """
                         emails_to_send = [emp.get("email")]
                         if emp.get("personal_email"):
                             emails_to_send.append(emp.get("personal_email"))
-                        to_email_str = ", ".join([e for e in emails_to_send if e])
-                        if to_email_str:
-                            send_email(to_email_str, subject, body)
-                            print(f"[SCHEDULER] Automatically sent Work Anniversary email to {emp.get('name')} ({to_email_str})")
+                        celebrant_to_str = ", ".join([e for e in emails_to_send if e])
 
-                        # 2. Broadcast announcement to all other active employees
                         broadcast_subject = f"Celebrating {emp.get('name', 'Employee')}'s {ordinal} Work Anniversary! 🚀"
                         broadcast_body = f"""
                         <html>
@@ -943,9 +924,9 @@ def check_and_send_celebrations():
                                     other_emails.append(other["email"])
                                 if other.get("personal_email"):
                                     other_emails.append(other["personal_email"])
-                        if other_emails:
-                            send_email(", ".join(other_emails), broadcast_subject, broadcast_body, as_group=True)
-                            print(f"[SCHEDULER] Dispatched Work Anniversary announcement for {emp.get('name')} ({ordinal}) to all other employees.")
+                        if celebrant_to_str:
+                            send_email(to_email=celebrant_to_str, subject=broadcast_subject, body=broadcast_body, bcc_email=", ".join(other_emails) if other_emails else None)
+                            print(f"[SCHEDULER] Dispatched Work Anniversary celebration email for {emp.get('name')} ({ordinal}) (TO: celebrant, BCC: {len(other_emails)} employees).")
     except Exception as e:
         print(f"[SCHEDULER] Celebrations check error: {str(e)}")
 
