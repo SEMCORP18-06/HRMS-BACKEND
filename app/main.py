@@ -322,7 +322,7 @@ def send_verification_otp():
         <h2 style="margin-bottom:8px;">Email Verification</h2>
         <p>Your verification code for SEMCO HR Operations Portal is:</p>
         <div style="text-align:center; margin:24px 0;">
-          <span style="font-size:32px; font-weight:800; letter-spacing:8px; background:linear-gradient(135deg,#15803d,#1d4ed8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; padding:16px 32px; border:2px dashed #1d4ed8; border-radius:12px; display:inline-block;">{otp}</span>
+          <span style="font-size:32px; font-weight:800; letter-spacing:8px; color:#15803d; background-color:#f0fdf4; padding:16px 32px; border:2px dashed #15803d; border-radius:12px; display:inline-block;">{otp}</span>
         </div>
         <p style="color:#64748b; font-size:13px;">This code expires in {OTP_EXPIRY_MINUTES} minutes. Do not share it with anyone.</p>
         </body></html>
@@ -408,7 +408,7 @@ def forgot_password():
         <p>Hi {emp_name},</p>
         <p>We received a request to reset your password for the SEMCO HR Operations Portal. Your reset code is:</p>
         <div style="text-align:center; margin:24px 0;">
-          <span style="font-size:32px; font-weight:800; letter-spacing:8px; background:linear-gradient(135deg,#dc2626,#f59e0b); -webkit-background-clip:text; -webkit-text-fill-color:transparent; padding:16px 32px; border:2px dashed #dc2626; border-radius:12px; display:inline-block;">{otp}</span>
+          <span style="font-size:32px; font-weight:800; letter-spacing:8px; color:#dc2626; background-color:#fef2f2; padding:16px 32px; border:2px dashed #dc2626; border-radius:12px; display:inline-block;">{otp}</span>
         </div>
         <p style="color:#64748b; font-size:13px;">This code expires in {OTP_EXPIRY_MINUTES} minutes. If you did not request this, please ignore this email.</p>
         </body></html>
@@ -1135,8 +1135,8 @@ def handle_single_employee(emp_id):
                                     <p>HR has approved your request to access the SEMCO Groups HR Portal using your personal email address.</p>
                                     <p>You can now register/sign up and log in using your personal email: <strong>{to_email}</strong>.</p>
                                     <div style="margin: 24px 0;">
-                                        <a href="{portal_link}" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #15803d, #1d4ed8); color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
-                                            Go to Portal Sign Up
+                                        <a href="{portal_link}" style="display: inline-block; padding: 14px 28px; background-color: #15803d; background: linear-gradient(135deg, #15803d, #1d4ed8); color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+                                            <span style="color: #ffffff !important; text-decoration: none;">Go to Portal Sign Up</span>
                                         </a>
                                     </div>
                                     <p>Best regards,<br>HR Operations Team<br><strong>SEMCO Groups</strong></p>
@@ -1172,7 +1172,7 @@ def handle_single_employee(emp_id):
                         <html>
                             <body style="font-family: Arial, sans-serif; line-height: 1.8; color: #1a1a1a; background-color: #f9f9f9; margin: 0; padding: 0;">
                                 <div style="max-width: 620px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
-                                    <div style="background: linear-gradient(135deg, #15803d 0%, #1d4ed8 100%); padding: 36px 40px;">
+                                    <div style="background-color: #15803d; background: linear-gradient(135deg, #15803d 0%, #1d4ed8 100%); padding: 36px 40px;">
                                         <h2 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Welcome Aboard! 🎉</h2>
                                         <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0 0; font-size: 17px;">Your company email is now active</p>
                                     </div>
@@ -1189,8 +1189,8 @@ def handle_single_employee(emp_id):
 
                                         <p style="font-size: 16px; color: #555555; margin: 0 0 8px 0;">Use this email to sign up and log in to the HR portal:</p>
                                         <div style="text-align: center; margin: 28px 0;">
-                                            <a href="{portal_link}" style="display: inline-block; padding: 16px 36px; background: linear-gradient(135deg, #15803d, #1d4ed8); color: white; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; letter-spacing: 0.3px; box-shadow: 0 6px 16px rgba(21, 128, 61, 0.3);">
-                                                Go to HR Portal
+                                            <a href="{portal_link}" style="display: inline-block; padding: 16px 36px; background-color: #15803d; background: linear-gradient(135deg, #15803d, #1d4ed8); color: #ffffff !important; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; letter-spacing: 0.3px; box-shadow: 0 6px 16px rgba(21, 128, 61, 0.3);">
+                                                <span style="color: #ffffff !important; text-decoration: none;">Go to HR Portal</span>
                                             </a>
                                         </div>
 
@@ -3794,7 +3794,9 @@ def trigger_offboarding(employee_id):
                         Please click the link below to access your personal Employee Portal dashboard and submit your custom notice period details:
                     </p>
                     <div style="margin: 30px 0;">
-                        <a href="{portal_link}" style="background-color: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">Access Employee Portal</a>
+                        <a href="{portal_link}" style="display: inline-block; background-color: #ef4444; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                            <span style="color: #ffffff !important; text-decoration: none;">Access Employee Portal</span>
+                        </a>
                     </div>
                     <p style="font-size: 13px; color: #94a3b8; text-align: left; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 20px;">
                         Thank you for your service at SEMCO Groups.
@@ -4958,7 +4960,7 @@ def send_onboarding_invite():
         <html>
             <body style="font-family: Arial, sans-serif; line-height: 1.8; color: #1a1a1a; background-color: #f9f9f9; margin: 0; padding: 0;">
                 <div style="max-width: 620px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
-                    <div style="background: linear-gradient(135deg, #15803d 0%, #1d4ed8 100%); padding: 36px 40px;">
+                    <div style="background-color: #15803d; background: linear-gradient(135deg, #15803d 0%, #1d4ed8 100%); padding: 36px 40px;">
                         <h2 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Welcome to SEMCO Groups!</h2>
                         <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0 0; font-size: 17px;">Your official employee onboarding invitation</p>
                     </div>
@@ -4968,8 +4970,8 @@ def send_onboarding_invite():
                             We are thrilled to welcome you to our team. To begin your onboarding process, please click the secure button below to self-populate your profile details in our HR system:
                         </p>
                         <div style="text-align: center; margin: 35px 0;">
-                            <a href="{invite_link}" style="display: inline-block; padding: 16px 36px; background: linear-gradient(135deg, #15803d, #1d4ed8); color: white; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; letter-spacing: 0.3px; box-shadow: 0 6px 16px rgba(21, 128, 61, 0.3);">
-                                Complete Onboarding Form
+                            <a href="{invite_link}" style="display: inline-block; padding: 16px 36px; background-color: #15803d; background: linear-gradient(135deg, #15803d, #1d4ed8); color: #ffffff !important; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; letter-spacing: 0.3px; box-shadow: 0 6px 16px rgba(21, 128, 61, 0.3);">
+                                <span style="color: #ffffff !important; text-decoration: none;">Complete Onboarding Form</span>
                             </a>
                         </div>
                         <p style="font-size: 16px; color: #555555; margin: 20px 0 8px 0;">If the button above does not work, copy and paste the link below into your browser:</p>
