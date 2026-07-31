@@ -11,12 +11,12 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.office365.com").strip()
 SMTP_PORT_STR = os.getenv("SMTP_PORT", "587").strip()
 SMTP_PORT = int(SMTP_PORT_STR) if SMTP_PORT_STR.isdigit() else 587
-SMTP_USER = os.getenv("SMTP_USER", "").strip()
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "hr@company.com").strip()
+SMTP_USER = os.getenv("SMTP_USER", "rutuja.a@semcogroups.com").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "R@$emco@111").strip()
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", "rutuja.a@semcogroups.com").strip()
 
 def safe_print(msg):
     try:

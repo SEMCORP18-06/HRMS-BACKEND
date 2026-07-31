@@ -4380,7 +4380,11 @@ def mark_attendance():
         
         target_emails = []
         if broadcast_all:
-            all_emps = list(db.employees.find({"tenant_id": tenant_id, "status": "ACTIVE"}))
+            emp_tenant = (emp_doc.get("tenant_id") if emp_doc else None) or tenant_id
+            query = {"status": "ACTIVE"}
+            if emp_tenant and emp_tenant != "default":
+                query["$or"] = [{"tenant_id": emp_tenant}, {"tenant_id": {"$exists": False}}]
+            all_emps = list(db.employees.find(query))
             target_emails = [e["email"] for e in all_emps if e.get("email") and e["email"].lower() != emp_email.lower()]
         elif isinstance(broadcast_recipients, list) and broadcast_recipients:
             target_emails = [r.strip() for r in broadcast_recipients if r and isinstance(r, str) and r.strip().lower() != emp_email.lower()]
