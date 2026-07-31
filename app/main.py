@@ -1068,12 +1068,13 @@ def restore_employee(emp_id):
 def handle_single_employee(emp_id):
     if request.method == 'DELETE':
         try:
+            db.employee_documents.delete_many({"employee_id": ObjectId(emp_id)})
             res = db.employees.delete_one(
                 {"_id": ObjectId(emp_id), "tenant_id": g.current_user["tenant_id"]}
             )
             if res.deleted_count == 0:
                 return jsonify({"detail": "Employee not found"}), 404
-            return jsonify({"message": "Employee permanently deleted."})
+            return jsonify({"message": "Employee and all associated document records permanently deleted."})
         except Exception as e:
             return jsonify({"detail": str(e)}), 500
     elif request.method == 'PUT':
@@ -3925,7 +3926,10 @@ def delete_employee_offboarding(employee_id):
         if not emp:
             return jsonify({"detail": "Employee not found"}), 404
             
-        # 1. Archive historical details into db.archive_employees
+        # 1. Permanently wipe all uploaded document records (Aadhaar, PAN, Passbook, Company Docs)
+        db.employee_documents.delete_many({"employee_id": ObjectId(employee_id)})
+        
+        # 2. Archive historical details into db.archive_employees
         archive_doc = dict(emp)
         archive_doc["status"] = "ARCHIVED"
         archive_doc["system_access_revoked"] = 1
@@ -3933,16 +3937,16 @@ def delete_employee_offboarding(employee_id):
         
         db.archive_employees.insert_one(archive_doc)
         
-        # 2. Revoke and delete from active employees collection
+        # 3. Revoke and delete from active employees collection
         db.employees.delete_one({"_id": ObjectId(employee_id)})
         
-        # 3. Clear the invitation record so the same personal email can be
+        # 4. Clear the invitation record so the same personal email can be
         #    re-used for a fresh onboarding invite in the future.
         personal_email_to_clear = emp.get("personal_email") or emp.get("email", "")
         if personal_email_to_clear:
             db.invitations.delete_many({"personal_email": personal_email_to_clear})
         
-        return jsonify({"message": f"Employee {emp['name']} has been safely archived, deleted, and portal access revoked."})
+        return jsonify({"message": f"Employee {emp['name']} offboarding complete. Profile archived, system access revoked, and all uploaded documents permanently purged."})
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
