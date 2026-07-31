@@ -4304,6 +4304,7 @@ def get_today_attendance():
 def mark_attendance():
     try:
         user_id = g.current_user["employee_id"]
+        tenant_id = g.current_user.get("tenant_id", "default")
         ist_now = get_ist_now()
         today_date = ist_now.date()
         today_str = today_date.isoformat()
@@ -4315,26 +4316,19 @@ def mark_attendance():
         if lock_record and lock_record.get("locked"):
             return jsonify({"detail": "This month's attendance has been locked and finalized by HR. No further selections can be submitted."}), 403
 
-        # Enforce 10:00 AM to 10:30 AM window rule for non-admin employees unless permitted by HR
-        user_role = g.current_user.get("role")
-        user_doc = db.employees.find_one({"_id": ObjectId(user_id)})
-        allow_late = user_doc.get("allow_late_attendance_marking", False) if user_doc else False
-
-        if user_role != "Admin (HR)" and not allow_late:
-            current_time = ist_now.time()
-            start_time = datetime.time(10, 0, 0)
-            end_time = datetime.time(10, 30, 0)
-            if not (start_time <= current_time <= end_time):
-                return jsonify({
-                    "detail": f"Attendance marking is restricted to 10:00 AM – 10:30 AM IST only. Current time is {ist_now.strftime('%I:%M %p')}. Contact HR Admin to permit late attendance marking."
-                }), 403
-
         data = request.json or {}
-        selection = data.get("selection")
+        selection = data.get("selection") or data.get("status")
+        leave_category = data.get("leave_category", "").strip()
+        reason = data.get("reason", "").strip()
+        handover_person = data.get("handover_person", "").strip()
+        broadcast_all = data.get("broadcast_all", False)
+        broadcast_recipients = data.get("broadcast_recipients", [])
         
         valid_selections = [
             'Present',
+            'Absent',
             'Weekly Off',
+            'Leave',
             'Sick Leave',
             'Casual Leave',
             'Privileged Leave',
@@ -4343,33 +4337,103 @@ def mark_attendance():
             'Extended Work'
         ]
         
-        if selection not in valid_selections:
+        if not selection or selection not in valid_selections:
             return jsonify({"detail": "Invalid status selection"}), 400
             
-        time_str = ist_now.strftime("%I:%M %p") # Time-wise AM/PM format in IST
+        time_str = ist_now.strftime("%I:%M %p")
+        
+        # If selection is "Leave" and specific category provided, prioritize category for tracking
+        actual_category = leave_category if (selection == 'Leave' and leave_category) else selection
         
         # Check if record exists for today
         record = db.attendance.find_one({"employee_id": ObjectId(user_id), "date": today_str})
         
+        selections = record.get("selections", {}) if record else {}
+        selections[selection] = time_str
+        if actual_category and actual_category != selection:
+            selections[actual_category] = time_str
+
+        update_doc = {
+            "employee_id": ObjectId(user_id),
+            "date": today_str,
+            "selections": selections,
+            "main_status": selection,
+            "leave_category": actual_category,
+            "reason": reason,
+            "handover_person": handover_person,
+            "updated_at": datetime.datetime.utcnow()
+        }
+
         if record:
-            selections = record.get("selections", {})
-            if selection in selections:
-                return jsonify({"detail": f"Selection '{selection}' is already locked for today and cannot be deselected."}), 400
-                
-            selections[selection] = time_str
-            db.attendance.update_one(
-                {"_id": record["_id"]},
-                {"$set": {"selections": selections}}
-            )
+            db.attendance.update_one({"_id": record["_id"]}, {"$set": update_doc})
         else:
-            selections = {selection: time_str}
-            db.attendance.insert_one({
-                "employee_id": ObjectId(user_id),
-                "date": today_str,
-                "selections": selections
-            })
+            db.attendance.insert_one(update_doc)
             
-        return jsonify({"date": today_str, "selections": list(selections.keys())})
+        # Send broadcast email if recipients specified or broadcast_all selected
+        broadcast_sent = False
+        recipients_count = 0
+        
+        emp_doc = db.employees.find_one({"_id": ObjectId(user_id)})
+        emp_name = emp_doc.get("name", "An Employee") if emp_doc else "An Employee"
+        emp_email = emp_doc.get("email", "") if emp_doc else ""
+        emp_dept = emp_doc.get("department", "General") if emp_doc else "General"
+        
+        target_emails = []
+        if broadcast_all:
+            all_emps = list(db.employees.find({"tenant_id": tenant_id, "status": "ACTIVE"}))
+            target_emails = [e["email"] for e in all_emps if e.get("email") and e["email"].lower() != emp_email.lower()]
+        elif isinstance(broadcast_recipients, list) and broadcast_recipients:
+            target_emails = [r.strip() for r in broadcast_recipients if r and isinstance(r, str) and r.strip().lower() != emp_email.lower()]
+
+        # Deduplicate
+        target_emails = list(dict.fromkeys(target_emails))
+
+        if target_emails:
+            display_status = actual_category if (selection == 'Leave' and actual_category) else selection
+            subject = f"[Leave Announcement] {emp_name} - {display_status} on {today_str}"
+            
+            reason_html = f"<p style='margin:6px 0; color:#334155;'><strong>Reason:</strong> {reason}</p>" if reason else "<p style='margin:6px 0; color:#64748b;'><strong>Reason:</strong> N/A</p>"
+            handover_html = f"<p style='margin:6px 0; color:#334155;'><strong>Handover / Contact Person:</strong> {handover_person}</p>" if handover_person else ""
+
+            body = f"""
+            <div style="padding: 24px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #ffffff;">
+                <h2 style="color: #1e293b; margin-top: 0; font-size: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 8px;">
+                    📢 Leave / Absence Announcement
+                </h2>
+                <p style="font-size: 15px; color: #475569;">
+                    Hi Team,
+                </p>
+                <p style="font-size: 15px; color: #475569;">
+                    Please be informed that <strong>{emp_name}</strong> (<em>{emp_dept}</em>) has marked their attendance status for <strong>{today_str}</strong>.
+                </p>
+                <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; margin: 16px 0; border-radius: 4px;">
+                    <p style="margin: 6px 0; color: #1e293b; font-size: 15px;"><strong>Status / Type:</strong> <span style="background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-weight: 600;">{display_status}</span></p>
+                    {reason_html}
+                    {handover_html}
+                </div>
+                <p style="font-size: 13px; color: #94a3b8; margin-top: 24px;">
+                    This is an automated notification broadcast from the HRMS Attendance Portal. You can reply directly to {emp_name} at <a href="mailto:{emp_email}" style="color: #3b82f6;">{emp_email}</a>.
+                </p>
+            </div>
+            """
+            
+            # Send single-thread group email
+            recipients_str = ", ".join(target_emails)
+            send_email(
+                to_email=recipients_str,
+                subject=subject,
+                body=body,
+                as_group=True
+            )
+            broadcast_sent = True
+            recipients_count = len(target_emails)
+            
+        return jsonify({
+            "date": today_str,
+            "selections": list(selections.keys()),
+            "broadcast_sent": broadcast_sent,
+            "recipients_count": recipients_count
+        })
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
