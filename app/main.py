@@ -40,6 +40,35 @@ def get_upload_dir(*paths):
         upload_dir = os.path.join(app.root_path, "static", "uploads", *paths)
     os.makedirs(upload_dir, exist_ok=True)
     return upload_dir
+
+def get_frontend_url():
+    """
+    Returns the root URL of the frontend SPA application for email links.
+    Prioritizes FRONTEND_URL env var, Origin / Referer request headers,
+    or falls back to the frontend domain.
+    """
+    env_url = os.environ.get("FRONTEND_URL")
+    if env_url:
+        return env_url.rstrip('/')
+    try:
+        from urllib.parse import urlparse
+        if request:
+            origin = request.headers.get("Origin")
+            if origin:
+                return origin.rstrip('/')
+            referer = request.headers.get("Referer")
+            if referer:
+                parsed = urlparse(referer)
+                if parsed.scheme and parsed.netloc:
+                    return f"{parsed.scheme}://{parsed.netloc}"
+            host = request.headers.get("Host", "")
+            if host and "backend" not in host.lower():
+                scheme = "https" if request.is_secure or "vercel" in host.lower() else "http"
+                return f"{scheme}://{host}"
+    except Exception:
+        pass
+    return "https://hrms-frontend-gamma.vercel.app"
+
 import base64
 
 def convert_file_to_base64_uri(file, allowed_ext=None):
@@ -1094,9 +1123,8 @@ def handle_single_employee(emp_id):
                         update_set["status"] = "ACTIVE"
                     to_email = personal_email or (existing_emp.get("personal_email") if existing_emp else "")
                     if to_email:
-                        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
-                        host = request.headers.get("Host", "localhost:8000")
-                        portal_link = f"{scheme}://{host}/?signup=true"
+                        frontend_url = get_frontend_url()
+                        portal_link = f"{frontend_url}/?signup=true"
                         subject = "Portal Access Granted via Personal Email"
                         body = f"""
                         <html>
@@ -1137,9 +1165,8 @@ def handle_single_employee(emp_id):
                         # Send welcome email to the newly provisioned company email
                         emp_name = name or (existing_emp.get("name") if existing_emp else "Employee")
                         emp_salutation = existing_emp.get("salutation", "Mr.") if existing_emp else "Mr."
-                        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
-                        host = request.headers.get("Host", "localhost:8000")
-                        portal_link = f"{scheme}://{host}/"
+                        frontend_url = get_frontend_url()
+                        portal_link = f"{frontend_url}/"
                         welcome_subject = "Your SEMCO Groups Company Email Has Been Provisioned"
                         welcome_body = f"""
                         <html>
@@ -3753,9 +3780,8 @@ def trigger_offboarding(employee_id):
         # 2. Email Employee with portal link
         emp_subject = "Offboarding Initiated"
         target_email = emp.get("personal_email") or emp.get("email")
-        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
-        host = request.headers.get("Host", "localhost:8000")
-        portal_link = f"{scheme}://{host}/"
+        frontend_url = get_frontend_url()
+        portal_link = f"{frontend_url}/"
         
         emp_body = f"""
         <html>
@@ -4924,9 +4950,8 @@ def send_onboarding_invite():
             upsert=True
         )
         
-        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
-        host = request.headers.get("Host", "localhost:8000")
-        invite_link = f"{scheme}://{host}/invite/activate?token={token}"
+        frontend_url = get_frontend_url()
+        invite_link = f"{frontend_url}/invite/activate?token={token}"
             
         subject = "Invitation to Onboard at SEMCO Groups"
         body = f"""
