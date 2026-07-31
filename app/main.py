@@ -67,7 +67,7 @@ def get_frontend_url():
                 return f"{scheme}://{host}"
     except Exception:
         pass
-    return "https://hrms-frontend-gamma.vercel.app"
+    return "https://semcorp-hrms-portal.vercel.app"
 
 import base64
 
