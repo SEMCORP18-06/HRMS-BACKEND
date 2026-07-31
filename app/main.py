@@ -4945,7 +4945,11 @@ def send_onboarding_invite():
                           </tbody>
                         </table>
 
-                        <div style="background: #eff6ff; border-left: 4px solid #1d4ed8; padding: 14px 18px; border-radius: 6px; margin: 24px 0; font-size: 14px; color: #1e40af;">
+                        <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 14px 18px; border-radius: 6px; margin: 24px 0 12px 0; font-size: 14px; color: #991b1b;">
+                          <strong>⚠️ File Size Limit:</strong> Each uploaded document must be <strong>under 700 KB</strong>. Please compress or resize your files before uploading. Oversized files will be rejected.
+                        </div>
+
+                        <div style="background: #eff6ff; border-left: 4px solid #1d4ed8; padding: 14px 18px; border-radius: 6px; margin: 12px 0 24px 0; font-size: 14px; color: #1e40af;">
                           <strong>Bank Details Required:</strong> You will also be asked to provide your bank account number, account name, bank name, and IFSC code for payroll processing.
                         </div>
 
