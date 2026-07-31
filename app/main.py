@@ -1134,6 +1134,58 @@ def handle_single_employee(emp_id):
                     # Auto-promote PENDING employee to ACTIVE when company email is provisioned
                     if existing_emp and existing_emp.get("status") == "PENDING":
                         update_set["status"] = "ACTIVE"
+                        # Send welcome email to the newly provisioned company email
+                        emp_name = name or (existing_emp.get("name") if existing_emp else "Employee")
+                        emp_salutation = existing_emp.get("salutation", "Mr.") if existing_emp else "Mr."
+                        scheme = "https" if request.is_secure or "vercel" in request.headers.get("Host", "").lower() else "http"
+                        host = request.headers.get("Host", "localhost:8000")
+                        portal_link = f"{scheme}://{host}/"
+                        welcome_subject = "Your SEMCO Groups Company Email Has Been Provisioned"
+                        welcome_body = f"""
+                        <html>
+                            <body style="font-family: Arial, sans-serif; line-height: 1.8; color: #1a1a1a; background-color: #f9f9f9; margin: 0; padding: 0;">
+                                <div style="max-width: 620px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08);">
+                                    <div style="background: linear-gradient(135deg, #15803d 0%, #1d4ed8 100%); padding: 36px 40px;">
+                                        <h2 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Welcome Aboard! 🎉</h2>
+                                        <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0 0; font-size: 17px;">Your company email is now active</p>
+                                    </div>
+                                    <div style="padding: 40px;">
+                                        <p style="font-size: 19px; margin: 0 0 20px 0; color: #1a1a1a;">Hello <strong>{emp_salutation} {emp_name}</strong>,</p>
+                                        <p style="font-size: 18px; color: #333333; margin: 0 0 20px 0; line-height: 1.8;">
+                                            Your onboarding is complete! HR has provisioned your official company email address. You can now sign up and access the SEMCO Groups HR Portal.
+                                        </p>
+
+                                        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; margin: 24px 0;">
+                                            <p style="margin: 0 0 8px 0; font-size: 14px; color: #166534; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Your Company Email</p>
+                                            <p style="margin: 0; font-size: 20px; font-weight: 800; color: #15803d;">{email}</p>
+                                        </div>
+
+                                        <p style="font-size: 16px; color: #555555; margin: 0 0 8px 0;">Use this email to sign up and log in to the HR portal:</p>
+                                        <div style="text-align: center; margin: 28px 0;">
+                                            <a href="{portal_link}" style="display: inline-block; padding: 16px 36px; background: linear-gradient(135deg, #15803d, #1d4ed8); color: white; text-decoration: none; border-radius: 10px; font-weight: 800; font-size: 18px; letter-spacing: 0.3px; box-shadow: 0 6px 16px rgba(21, 128, 61, 0.3);">
+                                                Go to HR Portal
+                                            </a>
+                                        </div>
+
+                                        <div style="background: #eff6ff; border-left: 4px solid #1d4ed8; padding: 14px 18px; border-radius: 6px; margin: 24px 0; font-size: 14px; color: #1e40af;">
+                                            <strong>Next Steps:</strong> Click the button above, sign up using your company email <strong>{email}</strong>, set your password, and you're all set!
+                                        </div>
+
+                                        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+                                        <p style="font-size: 17px; color: #333333; margin: 0 0 6px 0;">Best regards,</p>
+                                        <p style="font-size: 18px; color: #1a1a1a; font-weight: 700; margin: 0;">HR Operations Team<br/><span style="color: #15803d;">SEMCO Groups</span></p>
+                                    </div>
+                                    <footer style="background: #f8fafc; padding: 18px 40px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #e5e7eb;">
+                                      This is an automated notification from SEMCO Groups HR Operations. &copy; SEMCO Groups.
+                                    </footer>
+                                </div>
+                            </body>
+                        </html>
+                        """
+                        try:
+                            send_email(email, welcome_subject, welcome_body)
+                        except Exception as mail_err:
+                            print(f"[WARN] Welcome email to {email} failed: {mail_err}")
                 else:
                     update_set["email"] = ""
             else:
