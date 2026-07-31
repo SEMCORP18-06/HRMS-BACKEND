@@ -507,20 +507,24 @@ def sso_signup():
         admin_exists = db.employees.count_documents({"role": "Admin (HR)"}) > 0
         
         if admin_exists:
-            # Look for an unactivated profile (which has no password set yet) matching the email
+            # Look for an unactivated profile matching the email that has no password set yet
             existing = db.employees.find_one({
-                "$or": [{"email": email}, {"personal_email": email}],
-                "$or": [
-                    {"password": {"$exists": False}},
-                    {"password": None},
-                    {"password": ""}
+                "$and": [
+                    {"$or": [{"email": email}, {"personal_email": email}]},
+                    {"$or": [
+                        {"password": {"$exists": False}},
+                        {"password": None},
+                        {"password": ""}
+                    ]}
                 ]
             })
             if not existing:
                 # If no unactivated profile exists, check if it's already registered
                 already_registered = db.employees.find_one({
-                    "$or": [{"email": email}, {"personal_email": email}],
-                    "password": {"$ne": ""}
+                    "$and": [
+                        {"$or": [{"email": email}, {"personal_email": email}]},
+                        {"password": {"$exists": True, "$nin": [None, ""]}}
+                    ]
                 })
                 if already_registered:
                     return jsonify({"detail": "Account with this email already exists."}), 400
