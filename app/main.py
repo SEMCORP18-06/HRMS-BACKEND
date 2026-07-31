@@ -1693,10 +1693,24 @@ def update_employee_payroll_meta(employee_id):
 def get_my_payslips():
     try:
         user_id = g.current_user["employee_id"]
-        records = list(db.payrolls.find({
-            "employee_id": ObjectId(user_id),
-            "status": "SENT"
-        }))
+        user_email = g.current_user.get("email", "").strip().lower()
+        
+        emp_doc = db.employees.find_one({"_id": ObjectId(user_id)}) if ObjectId.is_valid(user_id) else None
+        if not emp_doc and user_email:
+            emp_doc = db.employees.find_one({"email": {"$regex": f"^{user_email}$", "$options": "i"}})
+            
+        emp_ids = []
+        if emp_doc:
+            emp_ids.append(emp_doc["_id"])
+            emp_ids.append(str(emp_doc["_id"]))
+        if ObjectId.is_valid(user_id):
+            emp_ids.append(ObjectId(user_id))
+        emp_ids.append(user_id)
+
+        # Deduplicate IDs
+        emp_ids = list(dict.fromkeys(emp_ids))
+
+        records = list(db.payrolls.find({"employee_id": {"$in": emp_ids}}))
         
         result = []
         for r in records:
@@ -1707,7 +1721,7 @@ def get_my_payslips():
                 "base_salary": r.get("base_salary", 0.0),
                 "allowances": r.get("allowances", 0.0),
                 "deductions": r.get("deductions", 0.0),
-                "status": r.get("status", "SENT"),
+                "status": r.get("status", "PENDING"),
                 "released_at": r.get("released_at", "")
             })
         return jsonify(result)
@@ -1724,9 +1738,16 @@ def download_encrypted_payslip(payroll_id):
             
         user_id = g.current_user["employee_id"]
         user_role = g.current_user.get("role")
+        user_email = g.current_user.get("email", "").strip().lower()
+        
+        emp = db.employees.find_one({"_id": pr["employee_id"]})
+        if not emp:
+            return jsonify({"detail": "Associated employee not found"}), 404
+            
+        emp_email = emp.get("email", "").strip().lower()
         
         # Verify access: Admin or the employee themselves
-        if str(pr["employee_id"]) != str(user_id) and user_role != "Admin (HR)":
+        if str(pr["employee_id"]) != str(user_id) and user_role != "Admin (HR)" and emp_email != user_email:
             return jsonify({"detail": "Access denied"}), 403
             
         emp = db.employees.find_one({"_id": pr["employee_id"]})
