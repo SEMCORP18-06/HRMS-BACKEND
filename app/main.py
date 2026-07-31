@@ -1662,20 +1662,79 @@ def upload_payroll_document():
     except Exception as e:
         return jsonify({"detail": f"Document processing error: {str(e)}"}), 500
 
-@app.route('/api/payroll/<payroll_id>/email', methods=['POST'])
+from .utils.pdf_encrypt import generate_salary_breakup_pdf, encrypt_pdf_aes, get_employee_pdf_password
+
+@app.route('/api/employees/<employee_id>/payroll-meta', methods=['POST'])
 @login_required
-def email_encrypted_payslip(payroll_id):
+def update_employee_payroll_meta(employee_id):
+    try:
+        data = request.json or {}
+        uan_no = data.get("uan_no", "").strip()
+        esic_no = data.get("esic_no", "").strip()
+        personal_email = data.get("personal_email", "").strip()
+        birthday = data.get("birthday", "").strip()
+        
+        update_fields = {}
+        if uan_no: update_fields["uan_no"] = uan_no
+        if esic_no: update_fields["esic_no"] = esic_no
+        if personal_email: update_fields["personal_email"] = personal_email
+        if birthday: update_fields["birthday"] = birthday
+        
+        if not update_fields:
+            return jsonify({"detail": "No metadata fields provided"}), 400
+            
+        db.employees.update_one({"_id": ObjectId(employee_id)}, {"$set": update_fields})
+        return jsonify({"message": "Employee payroll metadata updated successfully!"})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/payroll/my-payslips', methods=['GET'])
+@login_required
+def get_my_payslips():
+    try:
+        user_id = g.current_user["employee_id"]
+        records = list(db.payrolls.find({
+            "employee_id": ObjectId(user_id),
+            "status": "SENT"
+        }))
+        
+        result = []
+        for r in records:
+            result.append({
+                "id": str(r["_id"]),
+                "pay_period": r.get("pay_period", ""),
+                "net_salary": r.get("net_salary", 0.0),
+                "base_salary": r.get("base_salary", 0.0),
+                "allowances": r.get("allowances", 0.0),
+                "deductions": r.get("deductions", 0.0),
+                "status": r.get("status", "SENT"),
+                "released_at": r.get("released_at", "")
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/payroll/download/<payroll_id>', methods=['GET'])
+@login_required
+def download_encrypted_payslip(payroll_id):
     try:
         pr = db.payrolls.find_one({"_id": ObjectId(payroll_id)})
         if not pr:
             return jsonify({"detail": "Payroll record not found"}), 404
             
+        user_id = g.current_user["employee_id"]
+        user_role = g.current_user.get("role")
+        
+        # Verify access: Admin or the employee themselves
+        if str(pr["employee_id"]) != str(user_id) and user_role != "Admin (HR)":
+            return jsonify({"detail": "Access denied"}), 403
+            
         emp = db.employees.find_one({"_id": pr["employee_id"]})
         if not emp:
             return jsonify({"detail": "Associated employee not found"}), 404
             
-        temp_pdf = f"temp_payslip_{str(pr['_id'])}.pdf"
-        output_pdf = f"encrypted_payslip_{str(pr['_id'])}.pdf"
+        temp_pdf = os.path.join(get_upload_dir(), f"temp_dl_{str(pr['_id'])}.pdf")
+        output_pdf = os.path.join(get_upload_dir(), f"payslip_{pr['pay_period']}_{str(pr['_id'])}.pdf")
         
         employee_data = {
             "name": emp.get("name", "Valued Employee"),
@@ -1683,10 +1742,11 @@ def email_encrypted_payslip(payroll_id):
             "role": emp.get("role", ""),
             "department": emp.get("department", ""),
             "status": emp.get("status", ""),
-            "emp_id": emp.get("emp_id", "-"),
+            "emp_id": emp.get("emp_id") or emp.get("employee_code") or "-",
             "designation": emp.get("designation") or emp.get("role") or "-",
             "uan_no": emp.get("uan_no") or emp.get("uan") or "-",
-            "esic_no": emp.get("esic_no") or emp.get("esic") or "-"
+            "esic_no": emp.get("esic_no") or emp.get("esic") or "-",
+            "birthday": emp.get("birthday") or emp.get("dob") or ""
         }
         payroll_data = {
             "pay_period": pr.get("pay_period", ""),
@@ -1706,38 +1766,112 @@ def email_encrypted_payslip(payroll_id):
             "pt": pr.get("pt", 0.0),
             "base_salary": pr.get("base_salary", 0.0),
             "allowances": pr.get("allowances", 0.0),
-            "deductions": pr.get("deductions", 0.0)
+            "deductions": pr.get("deductions", 0.0),
+            "net_salary": pr.get("net_salary", 0.0)
         }
         
         generate_salary_breakup_pdf(employee_data, payroll_data, temp_pdf)
         
-        # Encrypt with AES-256 using employee email
-        password = emp["email"]
+        # Option 2 Password Standard: First 4 letters of Employee Name (UPPERCASE) + Year of Birth (e.g. JOHN1995)
+        password = get_employee_pdf_password(emp)
         encrypt_pdf_aes(temp_pdf, output_pdf, password)
         
-        subject = f"Encrypted Payslip - Period {pr['pay_period']}"
+        return send_file(
+            output_pdf,
+            as_attachment=True,
+            download_name=f"Payslip_{pr['pay_period']}.pdf",
+            mimetype="application/pdf"
+        )
+    except Exception as e:
+        return jsonify({"detail": f"Failed to download payslip: {str(e)}"}), 500
+
+@app.route('/api/payroll/<payroll_id>/email', methods=['POST'])
+@login_required
+def email_encrypted_payslip(payroll_id):
+    try:
+        pr = db.payrolls.find_one({"_id": ObjectId(payroll_id)})
+        if not pr:
+            return jsonify({"detail": "Payroll record not found"}), 404
+            
+        emp = db.employees.find_one({"_id": pr["employee_id"]})
+        if not emp:
+            return jsonify({"detail": "Associated employee not found"}), 404
+            
+        temp_pdf = os.path.join(get_upload_dir(), f"temp_mail_{str(pr['_id'])}.pdf")
+        output_pdf = os.path.join(get_upload_dir(), f"encrypted_payslip_{str(pr['_id'])}.pdf")
+        
+        employee_data = {
+            "name": emp.get("name", "Valued Employee"),
+            "email": emp.get("email", ""),
+            "role": emp.get("role", ""),
+            "department": emp.get("department", ""),
+            "status": emp.get("status", ""),
+            "emp_id": emp.get("emp_id") or emp.get("employee_code") or "-",
+            "designation": emp.get("designation") or emp.get("role") or "-",
+            "uan_no": emp.get("uan_no") or emp.get("uan") or "-",
+            "esic_no": emp.get("esic_no") or emp.get("esic") or "-",
+            "birthday": emp.get("birthday") or emp.get("dob") or ""
+        }
+        payroll_data = {
+            "pay_period": pr.get("pay_period", ""),
+            "present_days": pr.get("present_days", 30),
+            "leaves_taken": pr.get("leaves_taken", 0),
+            "leaves_balance": pr.get("leaves_balance", 0),
+            "basic_salary": pr.get("basic_salary", pr.get("base_salary", 0.0)),
+            "hra": pr.get("hra", 0.0),
+            "special_allowance": pr.get("special_allowance", 0.0),
+            "other_allowance": pr.get("other_allowance", 0.0),
+            "conveyance_allowance": pr.get("conveyance_allowance", 0.0),
+            "reimbursment": pr.get("reimbursment", 0.0),
+            "advance_decucted": pr.get("advance_decucted", 0.0),
+            "mlwf": pr.get("mlwf", 0.0),
+            "pf": pr.get("pf", 0.0),
+            "esi": pr.get("esi", 0.0),
+            "pt": pr.get("pt", 0.0),
+            "base_salary": pr.get("base_salary", 0.0),
+            "allowances": pr.get("allowances", 0.0),
+            "deductions": pr.get("deductions", 0.0),
+            "net_salary": pr.get("net_salary", 0.0)
+        }
+        
+        generate_salary_breakup_pdf(employee_data, payroll_data, temp_pdf)
+        
+        # Option 2 Password Standard: First 4 letters of Employee Name (UPPERCASE) + Year of Birth (e.g. JOHN1995)
+        password = get_employee_pdf_password(emp)
+        encrypt_pdf_aes(temp_pdf, output_pdf, password)
+        
+        # Target Personal Email if available, else work email
+        target_email = (emp.get("personal_email") or emp.get("email", "")).strip()
+        
+        subject = f"[SEMCO] Salary Slip for {pr['pay_period']} - {emp['name']}"
         body = f"""
         <html>
-            <body style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 20px; color: #1e293b;">
-                <div style="background-color: white; padding: 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-                    <h2 style="color: #10b981; border-bottom: 2px solid #ecfdf5; padding-bottom: 10px; margin-top: 0;">Payslip Received 👔</h2>
+            <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b;">
+                <div style="background-color: white; padding: 32px; border-radius: 12px; max-width: 620px; margin: 0 auto; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <h2 style="color: #15803d; border-bottom: 2px solid #dcfce7; padding-bottom: 10px; margin-top: 0; font-size: 20px;">
+                        👔 Salary Slip Released — {pr['pay_period']}
+                    </h2>
                     <p style="font-size: 15px; color: #475569;">
-                        Dear {emp['name']},<br><br>
-                        Please find attached your salary breakup / payslip for the pay period <b>{pr['pay_period']}</b>.
+                        Dear <strong>{emp['name']}</strong>,<br><br>
+                        Your salary slip for the month of <strong>{pr['pay_period']}</strong> has been generated and released.
                     </p>
-                    <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 6px;">
-                        <p style="margin: 0; font-size: 13px; color: #78350f;">
-                            <strong>🔒 Password Protected PDF:</strong><br>
-                            This document is encrypted with AES-256 for privacy. Use <b>your work email address</b> (e.g. <code>{emp['email']}</code>) to unlock it.
+                    <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 6px;">
+                        <p style="margin: 0; font-size: 14px; color: #78350f;">
+                            <strong>🔒 Password Protected PDF Attachment:</strong><br>
+                            This document is encrypted with AES-256 for privacy.<br>
+                            <strong>Password Format:</strong> First 4 letters of your name (UPPERCASE) + Year of Birth<br>
+                            <em>Example: For 'John Doe' born in 1995, password is <code>JOHN1995</code>.</em>
                         </p>
                     </div>
-                    <p style="font-size: 13px; color: #94a3b8;">This is an automated operational dispatch. Please contact HR for any salary queries.</p>
+                    <p style="font-size: 13px; color: #94a3b8; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
+                        This is an automated operational dispatch from SEMCORP HR. You can also view and download your payslip anytime from your Employee Portal.
+                    </p>
                 </div>
             </body>
         </html>
         """
         
-        send_email(emp["email"], subject, body, attachment_path=output_pdf, attachment_name=f"payslip_{pr['pay_period']}.pdf")
+        send_email(target_email, subject, body, attachment_path=output_pdf, attachment_name=f"Payslip_{pr['pay_period']}.pdf", as_group=True)
         
         if os.path.exists(output_pdf):
             try:
@@ -1745,8 +1879,8 @@ def email_encrypted_payslip(payroll_id):
             except OSError:
                 pass
                 
-        db.payrolls.update_one({"_id": ObjectId(payroll_id)}, {"$set": {"status": "SENT"}})
-        return jsonify({"message": "Payslip emailed successfully!"})
+        db.payrolls.update_one({"_id": ObjectId(payroll_id)}, {"$set": {"status": "SENT", "released_at": datetime.datetime.utcnow().isoformat()}})
+        return jsonify({"message": f"Payslip emailed successfully to {target_email}!"})
     except Exception as e:
         return jsonify({"detail": f"Payslip generation failed: {str(e)}"}), 500
 
@@ -4380,11 +4514,7 @@ def mark_attendance():
         
         target_emails = []
         if broadcast_all:
-            emp_tenant = (emp_doc.get("tenant_id") if emp_doc else None) or tenant_id
-            query = {"status": "ACTIVE"}
-            if emp_tenant and emp_tenant != "default":
-                query["$or"] = [{"tenant_id": emp_tenant}, {"tenant_id": {"$exists": False}}]
-            all_emps = list(db.employees.find(query))
+            all_emps = list(db.employees.find({"tenant_id": tenant_id, "status": "ACTIVE"}))
             target_emails = [e["email"] for e in all_emps if e.get("email") and e["email"].lower() != emp_email.lower()]
         elif isinstance(broadcast_recipients, list) and broadcast_recipients:
             target_emails = [r.strip() for r in broadcast_recipients if r and isinstance(r, str) and r.strip().lower() != emp_email.lower()]
