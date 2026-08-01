@@ -1816,6 +1816,23 @@ def get_my_payslips():
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
+@app.route('/api/payroll/<payroll_id>', methods=['DELETE'])
+@login_required
+def delete_payroll_record(payroll_id):
+    try:
+        user_role = g.current_user.get("role")
+        if user_role != "Admin (HR)":
+            return jsonify({"detail": "Access denied. Only HR Admin can delete payroll records."}), 403
+            
+        pr = db.payrolls.find_one({"_id": ObjectId(payroll_id)})
+        if not pr:
+            return jsonify({"detail": "Payroll record not found"}), 404
+            
+        db.payrolls.delete_one({"_id": ObjectId(payroll_id)})
+        return jsonify({"message": "Payroll record deleted successfully!"})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
 @app.route('/api/payroll/download/<payroll_id>', methods=['GET'])
 @login_required
 def download_encrypted_payslip(payroll_id):
