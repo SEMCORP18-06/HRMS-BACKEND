@@ -290,6 +290,7 @@ def generate_salary_breakup_pdf(employee_data: dict, payroll_data: dict, temp_pa
 def encrypt_pdf_aes(input_pdf_path: str, output_pdf_path: str, password: str):
     """
     Encrypts a generated PDF file using AES-256 encryption.
+    Falls back to RC4-128 if cryptography package is missing or loading.
     """
     if not os.path.exists(input_pdf_path):
         raise FileNotFoundError(f"Source PDF file not found: {input_pdf_path}")
@@ -301,8 +302,15 @@ def encrypt_pdf_aes(input_pdf_path: str, output_pdf_path: str, password: str):
     for page in reader.pages:
         writer.add_page(page)
         
-    # Encrypt the writer object with AES-256
-    writer.encrypt(user_password=password, owner_password=None, algorithm="AES-256")
+    # Encrypt the writer object with AES-256 (or fallback if cryptography is missing)
+    try:
+        writer.encrypt(user_password=password, owner_password=None, algorithm="AES-256")
+    except Exception as e:
+        print(f"AES encryption fallback triggered: {e}")
+        try:
+            writer.encrypt(user_password=password, owner_password=None, algorithm="RC4-128")
+        except Exception:
+            writer.encrypt(user_password=password)
     
     # Save the encrypted PDF
     with open(output_pdf_path, "wb") as f_out:
