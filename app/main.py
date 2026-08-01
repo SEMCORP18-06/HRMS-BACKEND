@@ -849,7 +849,6 @@ def handle_employees():
                 upsert=True
             )
 
-            check_and_send_celebrations()
             emp = db.employees.find_one({"_id": res.inserted_id})
             return jsonify({
                 "id": str(emp["_id"]),
@@ -1029,7 +1028,6 @@ def import_employees():
                 })
             imported_count += 1
             
-        check_and_send_celebrations()
         print(f"[IMPORT] Successfully imported/synchronized {imported_count} employee records.")
         return jsonify({"imported": imported_count})
     except Exception as e:
@@ -1229,7 +1227,6 @@ def handle_single_employee(emp_id):
             )
             if res.matched_count == 0:
                 return jsonify({"detail": "Employee not found"}), 404
-            check_and_send_celebrations()
             return jsonify({"message": "Employee updated successfully."})
         except Exception as e:
             return jsonify({"detail": str(e)}), 500
@@ -1402,6 +1399,15 @@ def send_celebration_email():
         to_email_str = ", ".join([email for email in emails_to_send if email])
         if to_email_str:
             send_email(to_email_str, subject, body)
+
+        db.celebration_logs.insert_one({
+            "employee_id": str(emp["_id"]),
+            "employee_name": emp.get("name"),
+            "type": celebration_type,
+            "date": datetime.date.today().isoformat(),
+            "sent_at": datetime.datetime.now().isoformat(),
+            "manual": True
+        })
             
         return jsonify({"message": "Celebration email sent successfully!"})
     except Exception as e:
@@ -2197,42 +2203,67 @@ def trigger_daily_pulse():
 @app.route('/api/cron/daily-tasks', methods=['GET', 'POST'])
 def run_daily_cron_tasks():
     """Vercel Cron endpoint triggered automatically at 10:30 AM IST (05:00 UTC) daily.
-    Executes Daily Pulse dispatch, Birthday/Anniversary celebrations, and Holiday reminders."""
+    Executes Daily Pulse dispatch, Birthday/Anniversary celebrations, Pending Appreciation Announcements, and Holiday reminders."""
+    logs = []
     try:
         from .utils.scheduler import (
             ensure_daily_pulse_schedule,
             check_and_send_daily_pulse,
             check_and_send_celebrations,
+            check_and_send_pending_appreciations,
             check_and_send_holiday_notifications
         )
         today = datetime.datetime.now()
         
-        # 1. Ensure pulse schedule is populated for a full 12-month rolling window ahead
-        for i in range(12):
-            m = (today.month - 1 + i) % 12 + 1
-            y = today.year + (today.month - 1 + i) // 12
-            ensure_daily_pulse_schedule(y, m)
+        # 1. Fast single-month pulse schedule population
+        try:
+            ensure_daily_pulse_schedule(today.year, today.month)
+            logs.append("Pulse schedule verified for current month.")
+        except Exception as pulse_sched_err:
+            logs.append(f"Pulse schedule check error: {str(pulse_sched_err)}")
         
-        # 2. Dispatch today's Daily Pulse quote if scheduled
-        check_and_send_daily_pulse()
+        # 2. Dispatch today's Daily Pulse quote
+        try:
+            check_and_send_daily_pulse()
+            logs.append("Daily Pulse check completed.")
+        except Exception as pulse_err:
+            logs.append(f"Daily Pulse error: {str(pulse_err)}")
         
         # 3. Dispatch Birthday & Work Anniversary greetings & broadcasts
-        check_and_send_celebrations()
+        try:
+            check_and_send_celebrations()
+            logs.append("Celebrations check completed.")
+        except Exception as celeb_err:
+            logs.append(f"Celebrations error: {str(celeb_err)}")
+
+        # 4. Dispatch Pending Appreciation Announcements scheduled for today
+        try:
+            check_and_send_pending_appreciations()
+            logs.append("Pending appreciations check completed.")
+        except Exception as appr_err:
+            logs.append(f"Pending appreciations error: {str(appr_err)}")
         
-        # 4. Dispatch Holiday notifications
-        check_and_send_holiday_notifications()
+        # 5. Dispatch Holiday notifications
+        try:
+            check_and_send_holiday_notifications()
+            logs.append("Holiday notifications check completed.")
+        except Exception as hol_err:
+            logs.append(f"Holiday notifications error: {str(hol_err)}")
         
         return jsonify({
             "status": "success",
-            "message": f"Daily cron tasks executed successfully for {today.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            "message": f"Daily cron tasks executed successfully for {today.strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            "execution_logs": logs
         }), 200
     except Exception as e:
         import traceback
         return jsonify({
             "status": "error",
             "detail": str(e),
+            "execution_logs": logs,
             "trace": traceback.format_exc()
         }), 500
+
 
 
 # --- Email Sandbox ---

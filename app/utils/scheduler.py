@@ -818,9 +818,11 @@ def get_ordinal_suffix(number):
 def check_and_send_celebrations():
     try:
         today = datetime.now().date()
+        today_str = today.isoformat()
         print(f"[SCHEDULER] Running daily check for Birthdays and Work Anniversaries today ({today})...")
         employees = list(db.employees.find({"status": "ACTIVE"}))
         for emp in employees:
+            emp_id_str = str(emp["_id"])
             dept = emp.get("department") or "General"
             desg = emp.get("designation") or emp.get("role") or "Employee"
 
@@ -829,60 +831,72 @@ def check_and_send_celebrations():
             if dob_val:
                 b_date = try_parse_date(dob_val)
                 if b_date and b_date.month == today.month and b_date.day == today.day:
-                    # 1. Personal wish to the celebrant
-                    subject = f"Happy Birthday, {emp.get('name', 'Employee')}! 🎂🎉"
-                    body = f"""
-                    <html>
-                        <body style="font-family: Arial, sans-serif; background-color: #fdf2f8; padding: 20px; color: #1e293b;">
-                            <div style="background-color: white; padding: 40px 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
-                                <h2 style="color: #ec4899; text-align: center; margin-bottom: 8px;">Happy Birthday, {emp.get('name', 'Employee')}! 🎂🎈</h2>
-                                <p style="font-size: 16px; line-height: 1.6; color: #475569; text-align: center; margin: 0 auto 20px; max-width: 480px;">
-                                    On behalf of the entire team, we wish you a fantastic birthday filled with joy, laughter, and success. Thank you for your amazing contributions to our organization!
-                                </p>
-                                <div style="text-align: center; font-size: 50px; margin: 24px 0;">🎉🎂🎁✨</div>
-                                <p style="font-size: 14px; text-align: center; color: #94a3b8; margin-top: 24px;">Warmest wishes,<br>The People Operations Team</p>
-                            </div>
-                        </body>
-                    </html>
-                    """
-                    emails_to_send = [emp.get("email")]
-                    if emp.get("personal_email"):
-                        emails_to_send.append(emp.get("personal_email"))
-                    to_email_str = ", ".join([e for e in emails_to_send if e])
-                    if to_email_str:
-                        send_email(to_email_str, subject, body)
-                        print(f"[SCHEDULER] Automatically sent Birthday email to {emp.get('name')} ({to_email_str})")
+                    already_sent = db.celebration_logs.find_one({
+                        "employee_id": emp_id_str,
+                        "type": "BIRTHDAY",
+                        "date": today_str
+                    })
+                    if not already_sent:
+                        celebrant_email = emp.get("email") or emp.get("personal_email")
+                        if celebrant_email:
+                            # 1. Personal wish to the celebrant
+                            subject = f"Happy Birthday, {emp.get('name', 'Employee')}! 🎂🎉"
+                            body = f"""
+                            <html>
+                                <body style="font-family: Arial, sans-serif; background-color: #fdf2f8; padding: 20px; color: #1e293b;">
+                                    <div style="background-color: white; padding: 40px 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
+                                        <h2 style="color: #ec4899; text-align: center; margin-bottom: 8px;">Happy Birthday, {emp.get('name', 'Employee')}! 🎂🎈</h2>
+                                        <p style="font-size: 16px; line-height: 1.6; color: #475569; text-align: center; margin: 0 auto 20px; max-width: 480px;">
+                                            On behalf of the entire team, we wish you a fantastic birthday filled with joy, laughter, and success. Thank you for your amazing contributions to our organization!
+                                        </p>
+                                        <div style="text-align: center; font-size: 50px; margin: 24px 0;">🎉🎂🎁✨</div>
+                                        <p style="font-size: 14px; text-align: center; color: #94a3b8; margin-top: 24px;">Warmest wishes,<br>The People Operations Team</p>
+                                    </div>
+                                </body>
+                            </html>
+                            """
+                            send_email(celebrant_email, subject, body)
 
-                    # 2. Broadcast announcement to all other active employees
-                    broadcast_subject = f"Let's Celebrate {emp.get('name', 'Employee')}'s Birthday! 🥳"
-                    broadcast_body = f"""
-                    <html>
-                        <body style="font-family: Arial, sans-serif; background-color: #fdf2f8; padding: 20px; color: #1e293b;">
-                            <div style="background-color: white; padding: 40px 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
-                                <h2 style="color: #ec4899; text-align: center; margin-bottom: 8px;">Let's Celebrate {emp.get('name', 'Employee')}'s Birthday! 🥳</h2>
-                                <p style="font-size: 16px; line-height: 1.6; color: #475569; text-align: center; margin: 0 auto 20px; max-width: 480px;">
-                                    Today is a special day! Please join us in wishing a very Happy Birthday to our colleague, <strong>{emp.get('name', 'Employee')}</strong>.
-                                </p>
-                                <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Department:</strong> {dept}</p>
-                                <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Designation:</strong> {desg}</p>
-                                <div style="text-align: center; font-size: 50px; margin: 24px 0;">🎉🎂🎁✨</div>
-                                <p style="font-size: 14px; text-align: center; color: #94a3b8; margin-top: 24px;">Warmest wishes,<br>The People Operations Team</p>
-                            </div>
-                        </body>
-                    </html>
-                    """
-                    celebrant_to_str = to_email_str
-                    other_emails = []
-                    for other in employees:
-                        if str(other["_id"]) != str(emp["_id"]):
-                            if other.get("email"):
-                                other_emails.append(other["email"])
-                            if other.get("personal_email"):
-                                other_emails.append(other["personal_email"])
-                                
-                    if celebrant_to_str:
-                        send_email(to_email=celebrant_to_str, subject=broadcast_subject, body=broadcast_body, bcc_email=", ".join(other_emails) if other_emails else None)
-                        print(f"[SCHEDULER] Dispatched Birthday celebration email for {emp.get('name')} (TO: celebrant, BCC: {len(other_emails)} employees).")
+                            # 2. Broadcast announcement to all other active employees (registered email only)
+                            broadcast_subject = f"Let's Celebrate {emp.get('name', 'Employee')}'s Birthday! 🥳"
+                            broadcast_body = f"""
+                            <html>
+                                <body style="font-family: Arial, sans-serif; background-color: #fdf2f8; padding: 20px; color: #1e293b;">
+                                    <div style="background-color: white; padding: 40px 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
+                                        <h2 style="color: #ec4899; text-align: center; margin-bottom: 8px;">Let's Celebrate {emp.get('name', 'Employee')}'s Birthday! 🥳</h2>
+                                        <p style="font-size: 16px; line-height: 1.6; color: #475569; text-align: center; margin: 0 auto 20px; max-width: 480px;">
+                                            Today is a special day! Please join us in wishing a very Happy Birthday to our colleague, <strong>{emp.get('name', 'Employee')}</strong>.
+                                        </p>
+                                        <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Department:</strong> {dept}</p>
+                                        <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Designation:</strong> {desg}</p>
+                                        <div style="text-align: center; font-size: 50px; margin: 24px 0;">🎉🎂🎁✨</div>
+                                        <p style="font-size: 14px; text-align: center; color: #94a3b8; margin-top: 24px;">Warmest wishes,<br>The People Operations Team</p>
+                                    </div>
+                                </body>
+                            </html>
+                            """
+                            other_emails = []
+                            for other in employees:
+                                if str(other["_id"]) != emp_id_str:
+                                    reg_e = other.get("email") or other.get("personal_email")
+                                    if reg_e:
+                                        other_emails.append(reg_e)
+                                        
+                            send_email(to_email=celebrant_email, subject=broadcast_subject, body=broadcast_body, bcc_email=", ".join(other_emails) if other_emails else None)
+                            
+                            # Mark as sent for today to prevent duplicates
+                            db.celebration_logs.insert_one({
+                                "employee_id": emp_id_str,
+                                "employee_name": emp.get("name"),
+                                "type": "BIRTHDAY",
+                                "date": today_str,
+                                "sent_at": datetime.now().isoformat()
+                            })
+                            print(f"[SCHEDULER] Dispatched Birthday celebration email for {emp.get('name')} (TO: {celebrant_email}, BCC: {len(other_emails)} employees).")
+                        else:
+                            print(f"[SCHEDULER] Skipping Birthday email for {emp.get('name')}: No valid email found.")
+                    else:
+                        print(f"[SCHEDULER] Birthday email for {emp.get('name')} already sent today ({today_str}). Skipping.")
 
             # ── Work Anniversary ───────────────────────────────────────────────
             doj_val = emp.get("doj") or emp.get("joining_date") or emp.get("anniversary")
@@ -892,43 +906,148 @@ def check_and_send_celebrations():
                     joining_year = a_date.year
                     years = today.year - joining_year
                     if years > 0:
-                        ordinal = get_ordinal_suffix(years)
-
-                        emails_to_send = [emp.get("email")]
-                        if emp.get("personal_email"):
-                            emails_to_send.append(emp.get("personal_email"))
-                        celebrant_to_str = ", ".join([e for e in emails_to_send if e])
-
-                        broadcast_subject = f"Celebrating {emp.get('name', 'Employee')}'s {ordinal} Work Anniversary! 🚀"
-                        broadcast_body = f"""
-                        <html>
-                            <body style="font-family: Arial, sans-serif; background-color: #ecfdf5; padding: 20px; color: #1e293b;">
-                                <div style="background-color: white; padding: 40px 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
-                                    <h2 style="color: #10b981; text-align: center; margin-bottom: 8px;">Celebrating {emp.get('name', 'Employee')}'s {ordinal} Work Anniversary! 🚀</h2>
-                                    <p style="font-size: 18px; font-weight: bold; color: #065f46; text-align: center; margin: 0 0 16px;">🎊 Congratulations! 🎊</p>
-                                    <p style="font-size: 16px; line-height: 1.6; color: #475569; text-align: center; margin: 0 auto 20px; max-width: 480px;">
-                                        Please join us in congratulating <strong>{emp.get('name', 'Employee')}</strong> on completing their <strong>{ordinal}</strong> year with SEMCO Groups!
-                                    </p>
-                                    <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Department:</strong> {dept}</p>
-                                    <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Designation:</strong> {desg}</p>
-                                    <div style="text-align: center; font-size: 50px; margin: 24px 0;">💼✨🚀🏆</div>
-                                    <p style="font-size: 14px; text-align: center; color: #94a3b8; margin-top: 24px;">Best regards,<br>The People Operations Team</p>
-                                </div>
-                            </body>
-                        </html>
-                        """
-                        other_emails = []
-                        for other in employees:
-                            if str(other["_id"]) != str(emp["_id"]):
-                                if other.get("email"):
-                                    other_emails.append(other["email"])
-                                if other.get("personal_email"):
-                                    other_emails.append(other["personal_email"])
-                        if celebrant_to_str:
-                            send_email(to_email=celebrant_to_str, subject=broadcast_subject, body=broadcast_body, bcc_email=", ".join(other_emails) if other_emails else None)
-                            print(f"[SCHEDULER] Dispatched Work Anniversary celebration email for {emp.get('name')} ({ordinal}) (TO: celebrant, BCC: {len(other_emails)} employees).")
+                        already_sent = db.celebration_logs.find_one({
+                            "employee_id": emp_id_str,
+                            "type": "ANNIVERSARY",
+                            "date": today_str
+                        })
+                        if not already_sent:
+                            ordinal = get_ordinal_suffix(years)
+                            celebrant_email = emp.get("email") or emp.get("personal_email")
+                            if celebrant_email:
+                                broadcast_subject = f"Celebrating {emp.get('name', 'Employee')}'s {ordinal} Work Anniversary! 🚀"
+                                broadcast_body = f"""
+                                <html>
+                                    <body style="font-family: Arial, sans-serif; background-color: #ecfdf5; padding: 20px; color: #1e293b;">
+                                        <div style="background-color: white; padding: 40px 30px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
+                                            <h2 style="color: #10b981; text-align: center; margin-bottom: 8px;">Celebrating {emp.get('name', 'Employee')}'s {ordinal} Work Anniversary! 🚀</h2>
+                                            <p style="font-size: 18px; font-weight: bold; color: #065f46; text-align: center; margin: 0 0 16px;">🎊 Congratulations! 🎊</p>
+                                            <p style="font-size: 16px; line-height: 1.6; color: #475569; text-align: center; margin: 0 auto 20px; max-width: 480px;">
+                                                Please join us in congratulating <strong>{emp.get('name', 'Employee')}</strong> on completing their <strong>{ordinal}</strong> year with SEMCO Groups!
+                                            </p>
+                                            <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Department:</strong> {dept}</p>
+                                            <p style="font-size: 15px; color: #475569; text-align: center; margin: 6px 0;"><strong>Designation:</strong> {desg}</p>
+                                            <div style="text-align: center; font-size: 50px; margin: 24px 0;">💼✨🚀🏆</div>
+                                            <p style="font-size: 14px; text-align: center; color: #94a3b8; margin-top: 24px;">Best regards,<br>The People Operations Team</p>
+                                        </div>
+                                    </body>
+                                </html>
+                                """
+                                other_emails = []
+                                for other in employees:
+                                    if str(other["_id"]) != emp_id_str:
+                                        reg_e = other.get("email") or other.get("personal_email")
+                                        if reg_e:
+                                            other_emails.append(reg_e)
+                                            
+                                send_email(to_email=celebrant_email, subject=broadcast_subject, body=broadcast_body, bcc_email=", ".join(other_emails) if other_emails else None)
+                                
+                                # Mark as sent for today to prevent duplicates
+                                db.celebration_logs.insert_one({
+                                    "employee_id": emp_id_str,
+                                    "employee_name": emp.get("name"),
+                                    "type": "ANNIVERSARY",
+                                    "date": today_str,
+                                    "sent_at": datetime.now().isoformat()
+                                })
+                                print(f"[SCHEDULER] Dispatched Work Anniversary celebration email for {emp.get('name')} ({ordinal}) (TO: {celebrant_email}, BCC: {len(other_emails)} employees).")
+                            else:
+                                print(f"[SCHEDULER] Skipping Anniversary email for {emp.get('name')}: No valid email found.")
+                        else:
+                            print(f"[SCHEDULER] Work Anniversary email for {emp.get('name')} already sent today ({today_str}). Skipping.")
     except Exception as e:
         print(f"[SCHEDULER] Celebrations check error: {str(e)}")
+
+def check_and_send_pending_appreciations():
+    try:
+        today_str = datetime.now().date().isoformat()
+        print(f"[SCHEDULER] Checking for pending appreciation announcements scheduled on or before {today_str}...")
+        pending_items = list(db.appreciations.find({
+            "status": "PENDING",
+            "date": {"$lte": today_str}
+        }))
+        if not pending_items:
+            print("[SCHEDULER] No pending appreciation announcements for auto-dispatch today.")
+            return
+
+        for appr in pending_items:
+            try:
+                email = appr.get("employee_email")
+                name = appr.get("employee_name")
+                a_type = appr.get("type", "CERTIFICATE")
+                reason = appr.get("reason", "")
+                date_str = appr.get("date", today_str)
+                tenant_id = appr.get("tenant_id", "semco")
+
+                awardee = db.employees.find_one({"email": email, "tenant_id": tenant_id})
+                target_email = (awardee.get("email") if awardee and awardee.get("email") else email)
+                
+                type_labels = {
+                    "CERTIFICATE": "Certificate of Appreciation",
+                    "CARD": "Job Well Done Card",
+                    "MONTH": "Employee of the Month"
+                }
+                type_label = type_labels.get(a_type, "Award of Excellence")
+                
+                dept = awardee.get("department", "General") if awardee else "General"
+                desg = (awardee.get("designation") or awardee.get("role") or "Employee") if awardee else "Employee"
+
+                announcement_recipients = appr.get("announcement_recipients") or []
+                broadcast_emails = []
+                if announcement_recipients:
+                    rec_object_ids = []
+                    for rid in announcement_recipients:
+                        try:
+                            rec_object_ids.append(ObjectId(rid))
+                        except Exception:
+                            pass
+                    recipients = list(db.employees.find({"_id": {"$in": rec_object_ids}}))
+                    for rec in recipients:
+                        rec_email = rec.get("email") or rec.get("personal_email")
+                        if rec_email and rec_email != target_email:
+                            broadcast_emails.append(rec_email)
+
+                announce_subject = f"Congratulations {name} on your {type_label}! 🌟🎉"
+                announce_body = f"""
+                <html>
+                    <body style="font-family: Arial, sans-serif; background-color: #faf5ff; padding: 20px; color: #1e293b;">
+                        <div style="background-color: white; padding: 40px; border-radius: 16px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-top: 8px solid #8b5cf6; text-align: center;">
+                            <span style="font-size: 50px;">🎉🌟</span>
+                            <h2 style="color: #6d28d9; margin-top: 15px; font-size: 22px;">Celebrating Employee Milestone!</h2>
+                            <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin-top: 20px;">
+                                Dear Team & <b>{name}</b>,<br><br>
+                                We are proud to announce that <b>{name}</b> has been awarded the <b>{type_label}</b> on <b>{date_str}</b>.
+                            </p>
+                            <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left; margin: 6px 0;">
+                                <strong>Department:</strong> {dept}<br>
+                                <strong>Designation:</strong> {desg}
+                            </p>
+                            <div style="background-color: #faf5ff; border: 1px solid #ddd6fe; padding: 20px; margin: 20px 0; border-radius: 10px; text-align: left; font-style: italic; color: #4c1d95;">
+                                "{reason}"
+                            </div>
+                            <p style="font-size: 15px; color: #475569; line-height: 1.6; text-align: left;">
+                                Please join us in congratulating <b>{name}</b> on this well-deserved recognition!
+                            </p>
+                            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 25px 0;">
+                            <p style="font-size: 12px; color: #94a3b8;">People Operations & HR Team</p>
+                        </div>
+                    </body>
+                </html>
+                """
+                if target_email:
+                    send_email(
+                        to_email=target_email,
+                        subject=announce_subject,
+                        body=announce_body,
+                        bcc_email=", ".join(broadcast_emails) if broadcast_emails else None
+                    )
+                db.appreciations.update_one({"_id": appr["_id"]}, {"$set": {"status": "SENT"}})
+                print(f"[SCHEDULER] Auto-dispatched pending appreciation for {name} ({type_label}).")
+            except Exception as item_err:
+                print(f"[SCHEDULER] Error dispatching appreciation {appr.get('_id')}: {str(item_err)}")
+    except Exception as e:
+        print(f"[SCHEDULER] Pending appreciations check error: {str(e)}")
+
 
 def seed_next_months_pulses():
     """Seeds pulses for a full 12-month rolling window ahead."""
@@ -941,6 +1060,7 @@ def seed_next_months_pulses():
         print(f"[SCHEDULER] Monthly pulse seeder: seeded 12-month rolling window starting {today.year}-{today.month:02d}.")
     except Exception as e:
         print(f"[SCHEDULER] Monthly pulse seeder error: {str(e)}")
+
 
 def init_scheduler():
     import os
