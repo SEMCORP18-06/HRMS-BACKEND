@@ -1673,18 +1673,106 @@ def update_employee_payroll_meta(employee_id):
         esic_no = data.get("esic_no", "").strip()
         personal_email = data.get("personal_email", "").strip()
         birthday = data.get("birthday", "").strip()
+        gross_salary = data.get("gross_salary")
         
         update_fields = {}
         if uan_no: update_fields["uan_no"] = uan_no
         if esic_no: update_fields["esic_no"] = esic_no
         if personal_email: update_fields["personal_email"] = personal_email
         if birthday: update_fields["birthday"] = birthday
+        if gross_salary is not None and str(gross_salary).strip() != "":
+            try:
+                update_fields["gross_salary"] = float(gross_salary)
+            except ValueError:
+                pass
         
         if not update_fields:
             return jsonify({"detail": "No metadata fields provided"}), 400
             
         db.employees.update_one({"_id": ObjectId(employee_id)}, {"$set": update_fields})
         return jsonify({"message": "Employee payroll metadata updated successfully!"})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+@app.route('/api/payroll/generate', methods=['POST'])
+@login_required
+def generate_payroll_from_gross():
+    try:
+        data = request.json or {}
+        employee_id = data.get("employee_id")
+        pay_period = data.get("pay_period", "July 2026").strip()
+        pt_type = data.get("pt_type", "standard")
+        
+        if not employee_id:
+            return jsonify({"detail": "Employee ID is required"}), 400
+            
+        emp = db.employees.find_one({"_id": ObjectId(employee_id)})
+        if not emp:
+            return jsonify({"detail": "Employee not found"}), 404
+            
+        gross_val = data.get("gross_salary")
+        if gross_val is None or str(gross_val).strip() == "":
+            gross_val = emp.get("gross_salary") or emp.get("gross") or 0.0
+        else:
+            gross_val = float(gross_val)
+            
+        if gross_val <= 0:
+            return jsonify({"detail": "Please enter or save a valid Gross Salary for this employee first."}), 400
+            
+        # Standard CTC Calculation Logic
+        basic = round(gross_val * 0.50, 2)
+        hra = round(basic * 0.40, 2)
+        conveyance = 1200.0
+        education = 1000.0
+        medical = 1250.0
+        bonus = round(basic * 0.0833, 2)
+        special = round(max(0.0, gross_val - (basic + hra + conveyance + education + medical + bonus)), 2)
+        
+        pf_base = min(basic, 15000.0)
+        employee_pf = round(pf_base * 0.12, 2)
+        employee_esic = round(gross_val * 0.0075, 2) if gross_val <= 21000.0 else 0.0
+        
+        pt = 200.0
+        pay_period_lower = pay_period.lower()
+        if pt_type == 'yearly2500_feb' and 'february' in pay_period_lower:
+            pt = 300.0
+        elif pt_type == 'yearly2500_mar' and 'march' in pay_period_lower:
+            pt = 300.0
+            
+        total_deductions = round(employee_pf + employee_esic + pt, 2)
+        net_salary = round(gross_val - total_deductions, 2)
+        
+        doc = {
+            "employee_id": ObjectId(employee_id),
+            "pay_period": pay_period,
+            "basic_salary": basic,
+            "hra": hra,
+            "conveyance_allowance": conveyance,
+            "education_allowance": education,
+            "medical_allowance": medical,
+            "special_allowance": special,
+            "bonus": bonus,
+            "base_salary": gross_val,
+            "allowances": round(hra + conveyance + education + medical + special + bonus, 2),
+            "pf": employee_pf,
+            "esi": employee_esic,
+            "pt": pt,
+            "deductions": total_deductions,
+            "net_salary": net_salary,
+            "status": "DRAFT"
+        }
+        
+        res = db.payrolls.update_one(
+            {"employee_id": ObjectId(employee_id), "pay_period": pay_period},
+            {"$set": doc},
+            upsert=True
+        )
+        
+        created = db.payrolls.find_one({"employee_id": ObjectId(employee_id), "pay_period": pay_period})
+        return jsonify({
+            "message": f"Payslip generated successfully for {emp.get('name', 'Employee')} ({pay_period})!",
+            "id": str(created["_id"])
+        })
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
 
